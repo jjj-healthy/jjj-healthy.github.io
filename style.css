@@ -263,8 +263,14 @@ img.avatar { object-fit: cover; }
 .field input[type="text"], .field input[type="number"], .field input[type="date"], .field textarea {
   width: 100%; border: 1.5px solid var(--line); background: var(--bg); border-radius: 10px; padding: 10px 12px; min-width: 0;
 }
+.field input[type="text"], .field input[type="number"] { min-height: 44px; }
 .field textarea { min-height: 84px; resize: vertical; }
-.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+/* 아이폰 사파리의 날짜 칸은 기본 너비가 커서 옆 칸을 덮음 → 칸 너비에 맞게 */
+.field input[type="date"] { -webkit-appearance: none; appearance: none; display: block; min-width: 0; max-width: 100%; min-height: 44px; text-align: left; }
+.field input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.metrics:not(:has(.field:not([hidden]))) { display: none; }
 .kinds { display: flex; flex-wrap: wrap; gap: 6px; }
 .kinds button { border: 1.5px solid var(--line); background: none; border-radius: 999px; padding: 4px 12px; font-size: 13px; }
 .kinds button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 700; }

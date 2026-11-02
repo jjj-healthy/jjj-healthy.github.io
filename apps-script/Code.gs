@@ -10,7 +10,7 @@
 
 const SHEETS = {
   members: ['id', 'name', 'key', 'role', 'joinedAt', 'avatar', 'height', 'weight', 'birthYear', 'sex', 'bodyPub', 'motto'],
-  entries: ['id', 'memberId', 'date', 'kind', 'minutes', 'km', 'memo', 'photoId', 'hidden', 'createdAt', 'updatedAt', 'intensity'],
+  entries: ['id', 'memberId', 'date', 'kind', 'minutes', 'km', 'memo', 'photoId', 'hidden', 'createdAt', 'updatedAt', 'intensity', 'speed', 'steps'],
   settings: ['key', 'value'],
   inbody: ['id', 'memberId', 'date', 'weight', 'muscle', 'fatMass', 'fatPct', 'bmi', 'bmr', 'score', 'photoId', 'public', 'createdAt', 'updatedAt', 'pubFields'],
 };
@@ -108,6 +108,8 @@ const ACTIONS = {
           kind: clean.kind,
           minutes: String(clean.minutes),
           km: String(clean.km),
+          speed: clean.speed ? String(clean.speed) : '',
+          steps: clean.steps ? String(clean.steps) : '',
           memo: clean.memo,
           photoId,
           hidden: clean.hidden ? 'Y' : '',
@@ -382,6 +384,8 @@ function stateFor_(me) {
         kind: r.kind,
         minutes: Number(r.minutes) || 0,
         km: Number(r.km) || 0,
+        speed: Number(r.speed) || 0,
+        steps: Number(r.steps) || 0,
         hidden,
         createdAt: Number(r.createdAt) || 0,
         intensity: INTENSITY[r.intensity] ? r.intensity : 'normal',
@@ -440,9 +444,17 @@ const KIND_MET = [
 const DEFAULT_MET = 5.0;
 const INTENSITY = { light: 0.8, normal: 1, hard: 1.25 };
 
+// 러닝·걷기·자전거는 속도로 MET을 고름: 적은 속도 → 거리÷시간 → 걸음 수(보폭으로 거리 추정)÷시간 순
+const STRIDE_M = { run: 1.0, walk: 0.7 };
 function metFor_(e) {
   const rule = KIND_MET.find((r) => r[0].test(e.kind));
-  if (rule && rule[2] && e.km > 0 && e.minutes > 0) return interp_(SPEED_MET[rule[2]], e.km / (e.minutes / 60));
+  if (rule && rule[2]) {
+    const h = e.minutes / 60;
+    let speed = e.speed > 0 ? e.speed : 0;
+    if (!speed && e.km > 0 && h > 0) speed = e.km / h;
+    if (!speed && e.steps > 0 && h > 0 && STRIDE_M[rule[2]]) speed = (e.steps * STRIDE_M[rule[2]]) / 1000 / h;
+    if (speed > 0) return interp_(SPEED_MET[rule[2]], speed);
+  }
   return (rule ? rule[1] : DEFAULT_MET) * (INTENSITY[e.intensity] || 1);
 }
 
@@ -516,6 +528,8 @@ function cleanEntry_(src) {
     kind,
     minutes: Math.max(0, Math.min(1440, Math.round(Number(src.minutes) || 0))),
     km: Math.max(0, Math.min(1000, Math.round((Number(src.km) || 0) * 10) / 10)),
+    speed: Math.max(0, Math.min(100, Math.round((Number(src.speed) || 0) * 10) / 10)),
+    steps: Math.max(0, Math.min(200000, Math.round(Number(src.steps) || 0))),
     memo: String(src.memo || '').trim().slice(0, 1000),
     hidden: !!src.hidden,
     intensity: INTENSITY[src.intensity] ? src.intensity : 'normal',

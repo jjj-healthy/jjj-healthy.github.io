@@ -103,7 +103,19 @@
       <div class="kinds" id="kindChips"></div>
       <input type="text" id="f-kind" maxlength="30" placeholder="직접 입력 (예: 클라이밍)">
     </div>
-    <label class="field"><span>거리 (km, 선택)</span><input type="number" id="f-km" min="0" step="0.1" inputmode="decimal" placeholder="5.0"></label>
+    <div class="field">
+      <span>추가 기록 (선택, 여러 개 골라도 돼요)</span>
+      <div class="kinds" id="metricChips" role="group" aria-label="추가 기록">
+        <button type="button" data-metric="km" aria-pressed="false">거리</button>
+        <button type="button" data-metric="speed" aria-pressed="false">속도</button>
+        <button type="button" data-metric="steps" aria-pressed="false">걸음 수</button>
+      </div>
+      <div class="metrics">
+        <label class="field" data-for="km" hidden><span>거리 (km)</span><input type="number" id="f-km" min="0" step="0.1" inputmode="decimal" placeholder="5.0"></label>
+        <label class="field" data-for="speed" hidden><span>평균 속도 (km/h)</span><input type="number" id="f-speed" min="0" step="0.1" inputmode="decimal" placeholder="8.5"></label>
+        <label class="field" data-for="steps" hidden><span>걸음 수</span><input type="number" id="f-steps" min="0" step="1" inputmode="numeric" placeholder="8000"></label>
+      </div>
+    </div>
     <label class="field"><span>메모</span><textarea id="f-memo" maxlength="1000" placeholder="오늘 어땠는지 자유롭게 적어주세요"></textarea></label>
     <div class="field">
       <span>사진</span>
@@ -124,7 +136,7 @@
         <button type="button" data-v="normal" aria-pressed="true">보통</button>
         <button type="button" data-v="hard" aria-pressed="false">힘들게</button>
       </div>
-      <small class="veil-note">칼로리 추정에 써요. 러닝·걷기·자전거는 거리를 적으면 속도로 계산해요. 칼로리는 대략적인 추정치(±20~30%)예요.</small>
+      <small class="veil-note">칼로리 추정에 써요. 러닝·걷기·자전거는 속도·거리·걸음 수를 적으면 그 속도에 맞춰 계산해요. 칼로리는 대략적인 추정치(±20~30%)예요.</small>
     </div>
     <label class="check"><input type="checkbox" id="f-hidden"><span>친구들에게 사진·메모 숨기기<small>운동한 날과 종목은 멤버 현황에 그대로 반영돼요.</small></span></label>
     <p class="err" id="entryErr" hidden></p>
@@ -284,8 +296,9 @@
     <details>
       <summary>운동 기록하기</summary>
       <ul>
-        <li>오른쪽 아래 <b>+ 기록하기</b> → 날짜, 종목, 운동 시간, 거리(선택), 메모, 사진을 넣고 저장해요.</li>
-        <li><b>강도</b>(가볍게·보통·힘들게)는 칼로리 추정에 쓰여요. 러닝·걷기·자전거는 거리를 적으면 속도로 계산해요.</li>
+        <li>오른쪽 아래 <b>+ 기록하기</b> → 날짜, 종목, 운동 시간, 메모, 사진을 넣고 저장해요.</li>
+        <li><b>추가 기록</b>의 <b>거리 · 속도 · 걸음 수</b> 버튼을 누르면 입력칸이 열려요. 필요한 것만 골라 적으면 돼요.</li>
+        <li><b>강도</b>(가볍게·보통·힘들게)는 칼로리 추정에 쓰여요. 러닝·걷기·자전거는 속도·거리·걸음 수를 적으면 그 속도에 맞춰 계산해요.</li>
         <li>내 기록 카드의 <b>수정 / 숨기기 / 삭제</b>로 고칠 수 있어요. 삭제는 한 번 더 눌러야 지워져요.</li>
         <li><b>숨기기</b>를 하면 사진과 메모가 친구들에게 안 보여요. 운동한 날과 종목은 그대로 인정돼요.</li>
       </ul>

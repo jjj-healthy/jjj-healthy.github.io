@@ -295,7 +295,13 @@
         const d = parseYmd(e.date);
         let head = "";
         if (e.date !== lastDate) { lastDate = e.date; head = `<div class="daylabel">${d.getMonth() + 1}월 ${d.getDate()}일 ${WD[(d.getDay() + 6) % 7]}요일</div>`; }
-        const stats = [Number(e.minutes) > 0 ? `${Number(e.minutes)}분` : "", Number(e.km) > 0 ? `${Number(e.km)}km` : "", e.kcal > 0 ? `약 ${Number(e.kcal).toLocaleString("ko-KR")}kcal` : ""].filter(Boolean).join(" · ");
+        const stats = [
+          Number(e.minutes) > 0 ? `${Number(e.minutes)}분` : "",
+          Number(e.km) > 0 ? `${Number(e.km)}km` : "",
+          Number(e.speed) > 0 ? `${Number(e.speed)}km/h` : "",
+          Number(e.steps) > 0 ? `${Number(e.steps).toLocaleString("ko-KR")}걸음` : "",
+          e.kcal > 0 ? `약 ${Number(e.kcal).toLocaleString("ko-KR")}kcal` : "",
+        ].filter(Boolean).join(" · ");
         const veiled = e.hidden && !mine;
         const photo = !veiled && validFileId(e.photo)
           ? `<button type="button" class="photo" data-act="zoom" data-id="${esc(e.photo)}"><img src="${esc(photoSrc(e.photo, 1200))}" data-alt="${esc(photoAlt(e.photo, 1200))}" alt="${esc(m.name)}의 운동 사진" loading="lazy" referrerpolicy="no-referrer"></button>` : "";
@@ -394,6 +400,21 @@
   });
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") { closeSheets(); $("#lightbox").hidden = true; } });
 
+  // 추가 기록 (거리 · 속도 · 걸음 수): 버튼을 누르면 입력칸이 열리고, 다시 누르면 닫히며 값도 지움
+  const METRICS = ["km", "speed", "steps"];
+  const metricOn = (k) => $(`#metricChips [data-metric="${k}"]`).getAttribute("aria-pressed") === "true";
+  function setMetric(k, on) {
+    $(`#metricChips [data-metric="${k}"]`).setAttribute("aria-pressed", String(on));
+    document.querySelector(`.metrics [data-for="${k}"]`).hidden = !on;
+    if (!on) $("#f-" + k).value = "";
+  }
+  $("#metricChips").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-metric]"); if (!b) return;
+    const k = b.dataset.metric, on = !metricOn(k);
+    setMetric(k, on);
+    if (on) $("#f-" + k).focus();
+  });
+
   // intensity
   function setIntensity(v) {
     S.intensity = ["light", "normal", "hard"].includes(v) ? v : "normal";
@@ -460,7 +481,12 @@
     $("#f-date").max = ymd(new Date());
     $("#f-min").value = e?.minutes || "";
     $("#f-kind").value = e?.kind || "";
-    $("#f-km").value = e?.km || "";
+    // 추가 기록: 값이 있는 항목만 열어 둠
+    METRICS.forEach((k) => {
+      const v = e && Number(e[k]) > 0 ? e[k] : "";
+      $("#f-" + k).value = v;
+      setMetric(k, !!v);
+    });
     $("#f-memo").value = e?.memo || "";
     $("#f-hidden").checked = !!e?.hidden;
     setIntensity(e?.intensity || "normal");
@@ -486,7 +512,9 @@
         id: S.editingId || undefined,
         date, kind,
         minutes: Math.round(Number($("#f-min").value) || 0),
-        km: Math.round((Number($("#f-km").value) || 0) * 10) / 10,
+        km: metricOn("km") ? Math.round((Number($("#f-km").value) || 0) * 10) / 10 : 0,
+        speed: metricOn("speed") ? Math.round((Number($("#f-speed").value) || 0) * 10) / 10 : 0,
+        steps: metricOn("steps") ? Math.round(Number($("#f-steps").value) || 0) : 0,
         memo: $("#f-memo").value.trim().slice(0, 1000),
         hidden: $("#f-hidden").checked,
         intensity: S.intensity,
@@ -1156,6 +1184,7 @@
     const dates = new Set(list.map((e) => e.date));
     const mins = list.reduce((s, e) => s + (Number(e.minutes) || 0), 0);
     const km = Math.round(list.reduce((s, e) => s + (Number(e.km) || 0), 0) * 10) / 10;
+    const steps = list.reduce((s, e) => s + (Number(e.steps) || 0), 0);
     const kcal = list.reduce((s, e) => s + (Number(e.kcal) || 0), 0);
     const thisMon = mondayOf(new Date());
     const weekDays = (mon) => daysIn(list, mon).size;
@@ -1192,7 +1221,7 @@
       ["연속 목표 달성", streak, "주"],
       ["전체 운동일", dates.size, "일"],
       ["총 운동 시간", fmtMinutes(mins), ""],
-    ].concat(km ? [["총 거리", km, "km"]] : []).concat(kcal ? [["총 소모 칼로리(약)", kcal.toLocaleString("ko-KR"), "kcal"]] : []);
+    ].concat(km ? [["총 거리", km, "km"]] : []).concat(steps ? [["총 걸음 수", steps.toLocaleString("ko-KR"), "걸음"]] : []).concat(kcal ? [["총 소모 칼로리(약)", kcal.toLocaleString("ko-KR"), "kcal"]] : []);
 
     $("#mePage").innerHTML = `
       <div class="mehead">${avatar(meM)}
