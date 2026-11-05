@@ -149,6 +149,21 @@ img.avatar { object-fit: cover; }
 .bellbtn:hover { border-color: var(--accent); color: var(--accent); }
 .bellbtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 .bellbtn .count { position: absolute; top: -5px; right: -6px; min-width: 18px; height: 18px; border-radius: 999px; background: var(--bad); color: #FFFFFF; font-size: 11px; font-weight: 700; display: grid; place-items: center; padding: 0 5px; box-shadow: 0 0 0 2px var(--bg); font-family: var(--font-num); }
+.pushcard { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--bg); }
+.pushcard:empty { display: none; }
+.pushcard .phead { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.pushcard .phead b { font-size: 15px; }
+.pushcard .pstate { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 9px; background: var(--line); color: var(--muted); }
+.pushcard .pstate.on { background: var(--good-soft); color: var(--good); }
+.pushcard p, .pushcard ol { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
+.pushcard ol { padding-left: 18px; }
+.pushcard ol b { color: var(--ink); }
+.pushcard .row-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.pushprefs { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.pushprefs label { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
+.pushprefs input { width: 17px; height: 17px; margin: 2px 0 0; accent-color: var(--accent); flex: none; }
+.pasteform { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; text-align: left; }
+.pasteform .field input { width: 100%; border: 1.5px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 12px; min-height: 44px; font: inherit; }
 .notilist { display: flex; flex-direction: column; gap: 6px; }
 .noti { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 12px; padding: 10px 12px; cursor: pointer; font: inherit; }
 .noti.unread { border-color: var(--accent); background: var(--accent-soft); }

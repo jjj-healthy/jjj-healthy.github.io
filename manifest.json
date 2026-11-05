@@ -1,0 +1,16 @@
+{
+  "name": "JJJ Healthy Girl",
+  "short_name": "JJJ Healthy",
+  "description": "매일 꾸준히 운동합시다! 친구들과 함께 쓰는 운동 기록장",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#EBEFF3",
+  "theme_color": "#EBEFF3",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

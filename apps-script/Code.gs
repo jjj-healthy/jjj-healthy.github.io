@@ -9,7 +9,7 @@
  */
 
 const SHEETS = {
-  members: ['id', 'name', 'key', 'role', 'joinedAt', 'avatar', 'height', 'weight', 'birthYear', 'sex', 'bodyPub', 'motto'],
+  members: ['id', 'name', 'key', 'role', 'joinedAt', 'avatar', 'height', 'weight', 'birthYear', 'sex', 'bodyPub', 'motto', 'notify'],
   entries: ['id', 'memberId', 'date', 'kind', 'minutes', 'km', 'memo', 'photoId', 'hidden', 'createdAt', 'updatedAt', 'intensity', 'speed', 'steps'],
   settings: ['key', 'value'],
   reactions: ['id', 'entryId', 'memberId', 'emoji', 'createdAt'],
@@ -90,7 +90,7 @@ const ACTIONS = {
     const clean = cleanEntry_(src);
     // 사진 업로드는 느리니까 잠금 밖에서 처리
     const newPhoto = src.photo && src.photo.data ? savePhoto_(me, src.photo) : '';
-    let oldPhoto = '';
+    let oldPhoto = '', isNew = false;
     try {
       withLock_(() => {
         const t = table_('entries');
@@ -98,6 +98,7 @@ const ACTIONS = {
         const existing = src.id ? t.rows.find((r) => r.id === src.id) : null;
         if (src.id && !existing) throw fail_('not_found', '기록을 찾을 수 없어요.');
         if (existing && existing.memberId !== me.id) throw fail_('forbidden', '본인 기록만 수정할 수 있어요.');
+        isNew = !existing;
         let photoId = existing ? existing.photoId : '';
         if (newPhoto || src.removePhoto) {
           oldPhoto = photoId;
@@ -126,6 +127,7 @@ const ACTIONS = {
       throw err;
     }
     if (oldPhoto) trashPhoto_(oldPhoto);
+    if (isNew) notifyOthers_(me, 'entry', me.name + '님이 운동을 기록했어요', clean.kind + (clean.minutes ? ' ' + clean.minutes + '분' : '') + ' · 이모지로 응원해 주세요!');
     return stateFor_(me);
   },
 
@@ -286,14 +288,40 @@ const ACTIONS = {
   react: (me, req) => {
     const emoji = String(req.emoji || '');
     if (REACTION_EMOJIS.indexOf(emoji) < 0) throw fail_('invalid', '고를 수 없는 이모지예요.');
+    let added = null;
     withLock_(() => {
       if (!table_('entries').rows.some((r) => r.id === req.entryId)) throw fail_('not_found', '기록을 찾을 수 없어요.');
       const t = table_('reactions');
       const mine = t.rows.find((r) => r.entryId === req.entryId && r.memberId === me.id && r.emoji === emoji);
       if (mine) t.sh.deleteRow(mine._row);
-      else writeRow_(t.sh, null, [ 'r' + uid_(12), req.entryId, me.id, emoji, String(Date.now()) ]);
+      else {
+        writeRow_(t.sh, null, [ 'r' + uid_(12), req.entryId, me.id, emoji, String(Date.now()) ]);
+        added = table_('entries').rows.find((r) => r.id === req.entryId);
+      }
+    });
+    if (added && added.memberId !== me.id) notifyMember_(added.memberId, 'react', me.name + '님이 ' + emoji + ' 반응을 남겼어요', '내 ' + added.kind + ' 기록 (' + added.date.slice(5).replace('-', '.') + ')');
+    return stateFor_(me);
+  },
+
+  // --- 휴대폰 알림 ---
+  setNotify: (me, req) => {
+    const prefs = (Array.isArray(req.prefs) ? req.prefs : []).filter((k) => NOTIFY_KINDS.indexOf(k) >= 0);
+    withLock_(() => {
+      const t = table_('members');
+      const r = t.rows.find((m) => m.id === me.id);
+      const row = SHEETS.members.map((c) => r[c]);
+      row[SHEETS.members.indexOf('notify')] = prefs.length ? prefs.join(',') : 'none';
+      writeRow_(t.sh, r._row, row);
     });
     return stateFor_(me);
+  },
+
+  pushTest: (me) => {
+    if (!pushConfig_()) throw fail_('push_off', '관리자가 아직 휴대폰 알림을 설정하지 않았어요.');
+    const res = sendPush_([me.alias], '테스트 알림이에요 🔔', '이 알림이 보이면 휴대폰 알림이 잘 설정된 거예요.');
+    if (!res.ok) throw fail_('push_failed', '알림을 보내지 못했어요. ' + (res.message || ''));
+    if (!res.recipients) throw fail_('push_no_device', '알림을 받을 기기를 찾지 못했어요. 이 기기에서 ‘알림 받기’를 다시 눌러주세요.');
+    return { sent: res.recipients };
   },
 
   deleteInbody: (me, req) => {
@@ -433,7 +461,8 @@ function stateFor_(me) {
   const entryIds = {};
   entries.forEach((e) => (entryIds[e.id] = true));
   return {
-    me: { id: me.id, name: me.name, role: me.role },
+    me: { id: me.id, name: me.name, role: me.role, alias: me.alias, notify: notifyPrefs_((memberRows.find((m) => m.id === me.id) || {}).notify) },
+    push: { ready: !!pushConfig_() },
     members,
     entries,
     bodies,
@@ -539,7 +568,7 @@ function roster_() {
 function auth_(key) {
   if (typeof key !== 'string' || key.length < 16) return null;
   const m = table_('members').rows.find((r) => r.key === key);
-  return m ? { id: m.id, name: m.name, role: m.role === 'admin' ? 'admin' : 'member' } : null;
+  return m ? { id: m.id, name: m.name, role: m.role === 'admin' ? 'admin' : 'member', alias: pushAlias_(m.key) } : null;
 }
 
 function requireAdmin_(me) {
@@ -1024,4 +1053,109 @@ function safeFileName_(s) {
 
 function safeTabName_(s) {
   return String(s).replace(/[\[\]*?\/\\:']/g, ' ').trim().slice(0, 90) || '멤버';
+}
+
+// ---------------------------------------------------------------------------
+// 휴대폰 푸시 알림 (OneSignal)
+//   스크립트 속성 ONESIGNAL_APP_ID, ONESIGNAL_API_KEY 를 넣고, 편집기에서 setupNotifications 를 한 번 실행하세요.
+//   알림 받는 사람은 멤버 id가 아니라 개인 키로 만든 비밀 값(alias)으로 정해요. 멤버 id는 모두에게 보여서,
+//   그걸로 정하면 다른 사람이 남의 알림을 받아 갈 수 있기 때문이에요.
+// ---------------------------------------------------------------------------
+const NOTIFY_KINDS = ['react', 'entry', 'daily', 'goal'];
+const NOTIFY_DEFAULT = ['react', 'daily', 'goal'];
+const SITE_URL = 'https://jjj-healthy.github.io/';
+
+function notifyPrefs_(v) {
+  if (!v) return NOTIFY_DEFAULT.slice();
+  if (v === 'none') return [];
+  return String(v).split(',').filter((k) => NOTIFY_KINDS.indexOf(k) >= 0);
+}
+
+function pushAlias_(key) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, 'push:' + key, Utilities.Charset.UTF_8);
+  return bytes.map((b) => ('0' + (b & 0xff).toString(16)).slice(-2)).join('').slice(0, 32);
+}
+
+function pushConfig_() {
+  const p = PropertiesService.getScriptProperties();
+  const appId = p.getProperty('ONESIGNAL_APP_ID'), key = p.getProperty('ONESIGNAL_API_KEY');
+  return appId && key ? { appId, key } : null;
+}
+
+// OneSignal로 보냄. 실패해도 저장 같은 원래 동작은 막지 않음
+function sendPush_(aliases, heading, message, url) {
+  const cfg = pushConfig_();
+  if (!cfg || !aliases.length) return { ok: false, message: '알림 설정이 없어요.' };
+  try {
+    const res = UrlFetchApp.fetch('https://api.onesignal.com/notifications?c=push', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Key ' + cfg.key },
+      muteHttpExceptions: true,
+      payload: JSON.stringify({
+        app_id: cfg.appId,
+        target_channel: 'push',
+        include_aliases: { external_id: aliases },
+        headings: { en: heading, ko: heading },
+        contents: { en: message, ko: message },
+        url: url || SITE_URL,
+      }),
+    });
+    const code = res.getResponseCode();
+    let body = {};
+    try { body = JSON.parse(res.getContentText()); } catch (_) {}
+    const noSubs = body.errors && JSON.stringify(body.errors).indexOf('not subscribed') >= 0;
+    if (code >= 300 && !noSubs) return { ok: false, message: (body.errors && JSON.stringify(body.errors)) || 'HTTP ' + code };
+    return { ok: true, recipients: noSubs ? 0 : body.id ? (body.recipients == null ? 1 : body.recipients) : 0 };
+  } catch (err) {
+    return { ok: false, message: String(err.message || err) };
+  }
+}
+
+function notifyMember_(memberId, kind, heading, message) {
+  const m = table_('members').rows.find((r) => r.id === memberId);
+  if (m && notifyPrefs_(m.notify).indexOf(kind) >= 0) sendPush_([pushAlias_(m.key)], heading, message);
+}
+
+function notifyOthers_(me, kind, heading, message) {
+  const aliases = table_('members').rows
+    .filter((m) => m.id !== me.id && notifyPrefs_(m.notify).indexOf(kind) >= 0)
+    .map((m) => pushAlias_(m.key));
+  if (aliases.length) sendPush_(aliases, heading, message);
+}
+
+// 매일 저녁 8시쯤: 주 후반(금·토·일)에 목표가 남았으면 목표 알림, 아니면 오늘 기록이 없을 때 운동 알림
+function dailyPush() {
+  if (!pushConfig_()) return;
+  clearCache_();
+  const today = today_();
+  const mon = mondayOf_(today);
+  const left = 7 - Math.round((Date.parse(today) - Date.parse(mon)) / 864e5); // 오늘 포함 남은 날
+  const goal = Math.max(1, Number(readSettings_().goal) || 3);
+  const entries = table_('entries').rows;
+  table_('members').rows.forEach((m) => {
+    const prefs = notifyPrefs_(m.notify);
+    const mine = entries.filter((e) => e.memberId === m.id);
+    const days = {};
+    mine.forEach((e) => { if (e.date >= mon && e.date <= today) days[e.date] = true; });
+    const done = Object.keys(days).length;
+    const need = goal - done;
+    const alias = pushAlias_(m.key);
+    if (prefs.indexOf('goal') >= 0 && need > 0 && need <= left && left <= 3) {
+      sendPush_([alias], '이번 주 목표까지 ' + need + '일 남았어요 🔥', '이번 주는 오늘 포함 ' + left + '일 남았어요. 지금 ' + done + '/' + goal + '일!');
+    } else if (prefs.indexOf('daily') >= 0 && !days[today]) {
+      sendPush_([alias], '오늘 운동했나요? 💪', '운동했다면 잊지 말고 기록을 남겨주세요. 이번 주 ' + done + '/' + goal + '일');
+    }
+  });
+}
+
+function setupNotifications() {
+  if (!pushConfig_()) throw new Error('프로젝트 설정 → 스크립트 속성에 ONESIGNAL_APP_ID 와 ONESIGNAL_API_KEY 를 먼저 넣어주세요.');
+  ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === 'dailyPush')
+    .forEach((t) => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('dailyPush').timeBased().everyDays(1).atHour(20).create();
+  // 외부 연결 권한 확인용으로 한 번 호출 (받을 사람이 없어도 괜찮음)
+  const res = sendPush_(['setup-check'], '알림 설정 확인', '이 알림은 아무에게도 가지 않아요.');
+  Logger.log(res.ok ? '휴대폰 알림을 켰어요. 매일 저녁 8~9시에 알림을 확인해요.' : 'OneSignal 연결 확인 실패: ' + res.message);
 }

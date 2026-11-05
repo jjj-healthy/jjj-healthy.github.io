@@ -75,6 +75,7 @@
     if (data.bodies) S.bodies = data.bodies;
     if (data.inbody) S.inbody = data.inbody;
     if (data.reactions) S.reactions = data.reactions;
+    if (data.push) S.push = data.push;
     S.loaded = true;
     if (!fromCache && data.me && data.entries) saveCache();
     render();
@@ -1447,6 +1448,8 @@
           }).join("")
         : `<p class="veil-note">아직 알림이 없어요.</p>`);
     $("#notiList").dataset.items = JSON.stringify(items.map((i) => i.entry.id));
+    renderPushCard();
+    if (PUSH_APP_ID && S.push && S.push.ready) loadOneSignal().then(() => { linkDevice(); renderPushCard(); });
     try { localStorage.setItem(seenKey(), String(Date.now())); } catch (_) {}
     openSheet("notiSheet");
     updateNotiBadge();
@@ -1463,6 +1466,144 @@
     render();
     const card = document.getElementById("entry-" + id);
     if (card) { card.scrollIntoView({ behavior: "smooth", block: "center" }); card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash"); }
+  });
+
+  // ---------- 휴대폰 푸시 알림 (OneSignal) ----------
+  const PUSH_APP_ID = (window.HEALTHY_CONFIG && window.HEALTHY_CONFIG.oneSignalAppId) || "";
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isStandalone = () => window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+  const pushSupported = () => "Notification" in window && "serviceWorker" in navigator && "PushManager" in window;
+  const NOTIFY_LABELS = [
+    ["react", "내 기록에 친구가 이모지를 남기면"],
+    ["entry", "친구가 새 운동 기록을 올리면"],
+    ["daily", "매일 저녁 8시, 오늘 기록이 아직 없으면"],
+    ["goal", "금·토·일 저녁, 이번 주 목표가 남았으면"],
+  ];
+  let OS = null, osPromise = null, osLoggedIn = "";
+  function loadOneSignal() {
+    if (!PUSH_APP_ID || !pushSupported()) return Promise.resolve(null);
+    if (osPromise) return osPromise;
+    osPromise = new Promise((resolve) => {
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      window.OneSignalDeferred.push(async (OneSignal) => {
+        try {
+          await OneSignal.init({ appId: PUSH_APP_ID, serviceWorkerPath: "OneSignalSDKWorker.js", notifyButton: { enable: false } });
+          OS = OneSignal;
+          OneSignal.User.PushSubscription.addEventListener("change", () => renderPushCard());
+          OneSignal.Notifications.addEventListener("permissionChange", () => renderPushCard());
+          resolve(OneSignal);
+        } catch (e) { console.warn("OneSignal init failed", e); resolve(null); }
+      });
+      const s = document.createElement("script");
+      s.src = "https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js";
+      s.defer = true;
+      s.onerror = () => resolve(null);
+      document.head.appendChild(s);
+      setTimeout(() => resolve(OS), 15000);
+    });
+    return osPromise;
+  }
+  // 이 기기를 내 알림 받는 곳으로 연결 (개인 키로 만든 비밀 값 사용)
+  async function linkDevice() {
+    if (!OS || !S.me || !S.me.alias || osLoggedIn === S.me.alias) return;
+    try { await OS.login(S.me.alias); osLoggedIn = S.me.alias; } catch (e) { console.warn(e); }
+  }
+  // 이미 알림을 허용한 기기는 열 때마다 연결을 확인
+  function bootPush() {
+    if (PUSH_APP_ID && pushSupported() && Notification.permission === "granted") loadOneSignal().then(linkDevice);
+  }
+  const myLink = () => location.origin + location.pathname + "#k=" + KEY;
+  function renderPushCard() {
+    const box = $("#pushCard");
+    if (!S.me) { box.innerHTML = ""; return; }
+    const prefs = S.me.notify || ["react", "daily", "goal"];
+    const prefsHtml = `<div class="pushprefs">${NOTIFY_LABELS.map(([k, l]) => `<label><input type="checkbox" data-pref="${k}"${prefs.includes(k) ? " checked" : ""}>${l}</label>`).join("")}</div>`;
+    const head = (state, on) => `<div class="phead"><b>휴대폰 알림</b><span class="pstate${on ? " on" : ""}">${state}</span></div>`;
+    if (!PUSH_APP_ID || !(S.push && S.push.ready)) {
+      box.innerHTML = head("준비 중") + `<p>관리자가 휴대폰 알림을 설정하면 여기서 켤 수 있어요.</p>`;
+      return;
+    }
+    if (isIOS && !isStandalone()) {
+      box.innerHTML = head("홈 화면 앱 필요") + `<ol>
+          <li>아래 <b>내 링크 복사</b>를 눌러요.</li>
+          <li>사파리 아래쪽 <b>공유 버튼 → 홈 화면에 추가</b>를 눌러요.</li>
+          <li>홈 화면에 생긴 <b>JJJ Healthy</b> 아이콘으로 열고, 복사한 링크를 붙여넣어요.</li>
+          <li>그 앱의 알림함에서 <b>휴대폰 알림 받기</b>를 눌러 허용해요.</li>
+        </ol><div class="row-btns"><button type="button" class="btn primary" id="copyMyLink">내 링크 복사</button></div>`;
+      return;
+    }
+    if (!pushSupported()) {
+      box.innerHTML = head("지원 안 됨") + `<p>이 브라우저에서는 휴대폰 알림을 받을 수 없어요. 아이폰은 사파리, 안드로이드는 크롬에서 열어주세요.</p>`;
+      return;
+    }
+    if (Notification.permission === "denied") {
+      box.innerHTML = head("차단됨") + `<p>이 기기에서 알림이 차단돼 있어요. 휴대폰 설정에서 이 사이트(앱)의 알림을 허용한 뒤 다시 열어주세요.</p>` + prefsHtml;
+      return;
+    }
+    const on = !!(OS && Notification.permission === "granted" && OS.User.PushSubscription.optedIn);
+    box.innerHTML = head(on ? "이 기기에서 받는 중" : "꺼짐", on) +
+      (on
+        ? `<div class="row-btns"><button type="button" class="btn" id="pushTest">테스트 알림 보내기</button><button type="button" class="btn" id="pushOff">이 기기 알림 끄기</button></div>`
+        : `<p>잠금 화면으로 알림을 받을 수 있어요. 받을 알림은 아래에서 골라요.</p><div class="row-btns"><button type="button" class="btn primary" id="pushOn">휴대폰 알림 받기</button></div>`) +
+      prefsHtml;
+  }
+  $("#pushCard").addEventListener("click", async (ev) => {
+    const id = ev.target.closest("button") && ev.target.closest("button").id;
+    if (id === "copyMyLink") {
+      try { await navigator.clipboard.writeText(myLink()); toast("내 링크를 복사했어요. 홈 화면 앱에서 붙여넣어 주세요"); }
+      catch (_) {
+        // 복사가 막힌 브라우저: 링크를 보여주고 직접 길게 눌러 복사하게 함
+        const box = ev.target.closest(".row-btns");
+        if (!box.querySelector("input")) box.insertAdjacentHTML("beforeend", `<input type="text" readonly class="linkbox" style="flex-basis:100%" aria-label="내 링크">`);
+        const inp = box.querySelector("input"); inp.value = myLink(); inp.focus(); inp.select();
+        toast("링크를 길게 눌러 복사해 주세요");
+      }
+      return;
+    }
+    if (id === "pushOn") {
+      if (!OS) { toast("알림 준비 중이에요. 잠시 뒤 다시 눌러주세요"); loadOneSignal().then(() => renderPushCard()); return; }
+      const btn = ev.target.closest("button"); btn.disabled = true;
+      try {
+        // 아이폰은 버튼을 누른 그 순간에 권한을 물어야 해서 가장 먼저 호출
+        await OS.Notifications.requestPermission();
+        if (Notification.permission === "granted") {
+          await linkDevice();
+          await OS.User.PushSubscription.optIn();
+          toast("이 기기에서 휴대폰 알림을 받아요");
+        } else toast("알림이 허용되지 않았어요");
+      } catch (e) { console.warn(e); toast("알림을 켜지 못했어요. 다시 시도해주세요"); }
+      renderPushCard();
+      return;
+    }
+    if (id === "pushOff") {
+      try { await OS.User.PushSubscription.optOut(); toast("이 기기 알림을 껐어요"); } catch (_) {}
+      renderPushCard();
+      return;
+    }
+    if (id === "pushTest") {
+      const btn = ev.target.closest("button"); btn.disabled = true; btn.textContent = "보내는 중…";
+      try { await api("pushTest"); toast("테스트 알림을 보냈어요. 몇 초 안에 와요"); }
+      catch (e) { toast(errText(e)); }
+      finally { btn.disabled = false; btn.textContent = "테스트 알림 보내기"; }
+    }
+  });
+  $("#pushCard").addEventListener("change", async (ev) => {
+    const c = ev.target.closest("[data-pref]"); if (!c) return;
+    const prefs = [...$("#pushCard").querySelectorAll("[data-pref]:checked")].map((x) => x.dataset.pref);
+    const before = S.me.notify;
+    S.me.notify = prefs;
+    try { apply(await api("setNotify", { prefs })); toast("알림 설정을 저장했어요"); }
+    catch (e) { S.me.notify = before; renderPushCard(); toast(errText(e)); }
+  });
+
+  // 홈 화면 앱처럼 저장 공간이 따로인 곳에서는 링크를 붙여넣어 들어옴
+  $("#pasteForm").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const v = $("#pasteLink").value.trim();
+    const m = v.match(/k=([A-Za-z0-9]{16,})/) || v.match(/^([A-Za-z0-9]{16,})$/);
+    if (!m) { $("#pasteErr").textContent = "링크를 다시 확인해주세요. 받은 개인 링크 전체를 붙여넣으면 돼요."; $("#pasteErr").hidden = false; return; }
+    try { localStorage.setItem(KEY_STORE, m[1]); } catch (_) {}
+    location.replace(location.pathname);
   });
 
   // 사용 가이드: 현재 규칙 숫자를 채워서 보여주고, 처음 한 번은 버튼에 점 표시
@@ -1575,7 +1716,7 @@
   $("#app").hidden = false;
   const cached = readCache();
   if (cached) apply(cached, true);
-  load();
+  load().then(bootPush);
   // 친구들의 새 기록을 가져오려고 1분마다, 그리고 다시 화면에 돌아왔을 때 새로고침
   setInterval(() => { if (KEY && document.visibilityState === "visible" && !anySheetOpen() && !editingMotto()) load(); }, 60000);
   document.addEventListener("visibilitychange", () => { if (KEY && document.visibilityState === "visible" && S.loaded && !anySheetOpen() && !editingMotto()) load(); });
