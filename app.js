@@ -19,7 +19,7 @@
     view: (() => { try { const v = localStorage.getItem("healthy.view"); return v === "month" || v === "me" ? v : "week"; } catch (_) { return "week"; } })(),
     weekOffset: 0, monthOffset: 0, mineOnly: false,
     editingId: null, photoFile: null, photoRemoved: false, intensity: "normal",
-    bodies: {}, inbody: [],
+    bodies: {}, inbody: [], reactions: [],
   };
 
   // ---------- key: 링크의 #k=… 를 이 기기에 저장하고 주소창에서는 지움 ----------
@@ -74,6 +74,7 @@
     if (data.settings) S.settings = data.settings;
     if (data.bodies) S.bodies = data.bodies;
     if (data.inbody) S.inbody = data.inbody;
+    if (data.reactions) S.reactions = data.reactions;
     S.loaded = true;
     if (!fromCache && data.me && data.entries) saveCache();
     render();
@@ -82,7 +83,7 @@
   // 마지막으로 받은 내용을 이 기기에 저장해 두고, 다음에 열 때 바로 보여줌
   const CACHE_STORE = "healthy.state";
   function saveCache() {
-    const data = { me: S.me, members: S.members, entries: S.entries, settings: S.settings, bodies: S.bodies, inbody: S.inbody };
+    const data = { me: S.me, members: S.members, entries: S.entries, settings: S.settings, bodies: S.bodies, inbody: S.inbody, reactions: S.reactions };
     try { localStorage.setItem(CACHE_STORE, JSON.stringify({ k: KEY, data })); } catch (_) {}
   }
   function readCache() {
@@ -316,11 +317,11 @@
         } else if (isAdmin) {
           actions = `<div class="actions"><button type="button" class="act danger" data-act="del" data-id="${esc(e.id)}">관리자 삭제</button></div>`;
         }
-        return `${head}<article class="card${veiled ? " veiled" : ""}">
+        return `${head}<article class="card${veiled ? " veiled" : ""}" id="entry-${esc(e.id)}">
           <div class="card-head">${avatar(m)}<span class="name">${esc(m.name || "친구")}</span>${e.hidden ? `<span class="badge">${mine ? "숨김 · 나만 보기" : "숨긴 기록"}</span>` : ""}<span class="when num">${d.getMonth() + 1}.${d.getDate()}</span></div>
           <div class="what"><span class="kind">${esc(e.kind || "운동")}</span>${stats ? `<span class="stats">${esc(stats)}</span>` : ""}</div>
           ${veiled ? `<p class="veil-note">사진과 메모는 숨겨져 있어요. 운동한 날은 멤버 현황에 반영돼요.</p>` : ""}
-          ${memo}${photo}${actions}
+          ${memo}${photo}${reactionBar(e)}${actions}
         </article>`;
       }).join("");
       feed.querySelectorAll(".photo img").forEach((img) => img.addEventListener("error", function onErr() {
@@ -334,6 +335,7 @@
     $("#meLine").textContent = S.me ? `${S.me.name || "나"}(으)로 참여 중` : "";
     $("#manage").hidden = !isAdmin;
     $("#fab").hidden = false;
+    updateNotiBadge();
   }
 
   // 월별 보기: 달력(날짜마다 운동한 멤버 색 점) + 멤버별 합계
@@ -1297,6 +1299,142 @@
       if (e.key === "Escape") { e.stopPropagation(); finish(false); }
     });
     input.addEventListener("blur", () => finish(true));
+  });
+
+  // ---------- 이모지 반응 ----------
+  const REACT_EMOJIS = ["👍", "🔥", "💪", "👏", "😂", "❤️"];
+  const SMILE = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M5.6 9.6a3 3 0 0 0 4.8 0"/><circle cx="6" cy="6.6" r=".6" fill="currentColor" stroke="none"/><circle cx="10" cy="6.6" r=".6" fill="currentColor" stroke="none"/></svg>`;
+  const memberName = (id) => (S.members.find((m) => m.id === id) || {}).name || "친구";
+  function reactionBar(e) {
+    const list = S.reactions.filter((r) => r.entryId === e.id);
+    const chips = REACT_EMOJIS.map((em) => {
+      const who = list.filter((r) => r.emoji === em);
+      if (!who.length) return "";
+      const mine = who.some((r) => S.me && r.memberId === S.me.id);
+      const names = who.map((r) => memberName(r.memberId)).join(", ");
+      return `<button type="button" class="react${mine ? " mine" : ""}" data-react="${em}" data-entry="${esc(e.id)}" aria-pressed="${mine}" title="${esc(names)}" aria-label="${em} ${who.length}명: ${esc(names)}">${em}<span class="num">${who.length}</span></button>`;
+    }).join("");
+    const picker = REACT_EMOJIS.map((em) => `<button type="button" data-react="${em}" data-entry="${esc(e.id)}" aria-label="${em} 남기기">${em}</button>`).join("");
+    return `<div class="reacts">${chips}<span class="reactadd"><button type="button" class="reactbtn" data-react-open aria-label="이모지 남기기" aria-expanded="false">${SMILE}<span aria-hidden="true">+</span></button><span class="picker" hidden>${picker}</span></span></div>`;
+  }
+  const closePickers = (except) => document.querySelectorAll(".picker:not([hidden])").forEach((p) => {
+    if (p === except) return;
+    p.hidden = true; p.previousElementSibling.setAttribute("aria-expanded", "false");
+  });
+  // 누르자마자 화면에 반영하고, 서버 응답으로 맞춤 (실패하면 되돌림)
+  async function toggleReact(entryId, emoji) {
+    if (!S.me) return;
+    const before = S.reactions;
+    const has = before.some((r) => r.entryId === entryId && r.memberId === S.me.id && r.emoji === emoji);
+    S.reactions = has
+      ? before.filter((r) => !(r.entryId === entryId && r.memberId === S.me.id && r.emoji === emoji))
+      : before.concat([{ entryId, memberId: S.me.id, emoji, at: Date.now() }]);
+    render();
+    try { apply(await api("react", { entryId, emoji })); }
+    catch (e) { S.reactions = before; render(); toast(errText(e)); }
+  }
+  $("#feed").addEventListener("click", (ev) => {
+    const open = ev.target.closest("[data-react-open]");
+    if (open) {
+      const p = open.nextElementSibling;
+      closePickers(p);
+      p.hidden = !p.hidden; open.setAttribute("aria-expanded", String(!p.hidden));
+      if (!p.hidden) {
+        // 화면 오른쪽으로 넘치면 오른쪽 끝에 맞춤
+        p.style.left = ""; p.style.right = "";
+        if (p.getBoundingClientRect().right > window.innerWidth - 8) { p.style.left = "auto"; p.style.right = "0"; }
+        p.querySelector("button").focus();
+      }
+      return;
+    }
+    const r = ev.target.closest("[data-react]");
+    if (r) { closePickers(); toggleReact(r.dataset.entry, r.dataset.react); }
+  });
+  document.addEventListener("click", (ev) => { if (!ev.target.closest(".reactadd")) closePickers(); });
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closePickers(); });
+
+  // ---------- 알림함 (앱 안): 친구의 새 기록 + 내 기록에 남긴 이모지 + 이번 주 목표 안내 ----------
+  const seenKey = () => "healthy.notiSeen." + (S.me ? S.me.id : "");
+  function notiSeen() {
+    try {
+      const v = Number(localStorage.getItem(seenKey()));
+      if (v) return v;
+      // 처음 쓰는 기기에서는 지난 소식이 한꺼번에 '새 알림'으로 뜨지 않게 지금부터 셈
+      localStorage.setItem(seenKey(), String(Date.now()));
+    } catch (_) {}
+    return Date.now();
+  }
+  const ago = (t) => {
+    const s = (Date.now() - t) / 1000;
+    if (s < 60) return "방금";
+    if (s < 3600) return `${Math.floor(s / 60)}분 전`;
+    if (s < 86400) return `${Math.floor(s / 3600)}시간 전`;
+    if (s < 86400 * 7) return `${Math.floor(s / 86400)}일 전`;
+    const d = new Date(t); return `${d.getMonth() + 1}.${d.getDate()}`;
+  };
+  function notiItems() {
+    if (!S.me) return [];
+    const myId = S.me.id;
+    const byEntry = Object.fromEntries(S.entries.map((e) => [e.id, e]));
+    const items = [];
+    S.reactions.forEach((r) => {
+      const e = byEntry[r.entryId];
+      if (e && e.memberId === myId && r.memberId !== myId && r.at) items.push({ at: r.at, who: r.memberId, text: `내 ${e.kind || "운동"} 기록에 ${r.emoji} 반응을 남겼어요`, entry: e });
+    });
+    S.entries.forEach((e) => {
+      if (e.memberId !== myId && e.createdAt) items.push({ at: e.createdAt, who: e.memberId, text: `${e.kind || "운동"}${Number(e.minutes) > 0 ? ` ${e.minutes}분` : ""} 운동을 기록했어요`, entry: e });
+    });
+    return items.sort((a, b) => b.at - a.at).slice(0, 40);
+  }
+  function weekTip() {
+    if (!S.me) return "";
+    const c = cfg(), mon = mondayOf(new Date());
+    const done = daysIn(S.entries.filter((e) => e.memberId === S.me.id), mon).size;
+    const left = 7 - ((new Date().getDay() + 6) % 7);
+    if (done >= c.goal) return "";
+    const need = c.goal - done;
+    return need > left
+      ? `이번 주는 목표(주 ${c.goal}일)를 채우기 어려워요. 다음 주에 다시 도전해요!`
+      : `이번 주 목표까지 ${need}일 남았어요. 이번 주는 오늘 포함 ${left}일 남았어요.`;
+  }
+  function updateNotiBadge() {
+    if (!S.me) return;
+    const seen = notiSeen();
+    const n = notiItems().filter((i) => i.at > seen).length;
+    $("#notiCount").hidden = !n;
+    $("#notiCount").textContent = n > 99 ? "99+" : String(n);
+    $("#openNoti").setAttribute("aria-label", n ? `알림 ${n}개` : "알림");
+    document.title = (n ? `(${n}) ` : "") + document.title.replace(/^\(\d+\+?\) /, "");
+  }
+  $("#openNoti").addEventListener("click", () => {
+    const seen = notiSeen();
+    const items = notiItems();
+    const tip = weekTip();
+    $("#notiList").innerHTML =
+      (tip ? `<div class="noti tip"><span class="nicon" aria-hidden="true">!</span><span class="ntext">${esc(tip)}</span></div>` : "") +
+      (items.length
+        ? items.map((i, k) => {
+            const m = S.members.find((x) => x.id === i.who) || { id: i.who, name: "친구" };
+            return `<button type="button" class="noti${i.at > seen ? " unread" : ""}" data-noti="${k}">${avatar(m)}<span class="ntext"><b>${esc(m.name || "친구")}</b>님이 ${esc(i.text)}<small>${esc(ago(i.at))}</small></span></button>`;
+          }).join("")
+        : `<p class="veil-note">아직 알림이 없어요.</p>`);
+    $("#notiList").dataset.items = JSON.stringify(items.map((i) => i.entry.id));
+    try { localStorage.setItem(seenKey(), String(Date.now())); } catch (_) {}
+    openSheet("notiSheet");
+    updateNotiBadge();
+  });
+  // 알림을 누르면 그 기록이 있는 주로 가서 보여줌
+  $("#notiList").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-noti]"); if (!b) return;
+    const id = JSON.parse($("#notiList").dataset.items || "[]")[Number(b.dataset.noti)];
+    const e = S.entries.find((x) => x.id === id); if (!e) return;
+    closeSheets();
+    S.view = "week"; S.mineOnly = false;
+    $("#tabAll").setAttribute("aria-pressed", "true"); $("#tabMine").setAttribute("aria-pressed", "false");
+    S.weekOffset = Math.round((mondayOf(parseYmd(e.date)) - mondayOf(new Date())) / (7 * 864e5));
+    render();
+    const card = document.getElementById("entry-" + id);
+    if (card) { card.scrollIntoView({ behavior: "smooth", block: "center" }); card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash"); }
   });
 
   // 사용 가이드: 현재 규칙 숫자를 채워서 보여주고, 처음 한 번은 버튼에 점 표시

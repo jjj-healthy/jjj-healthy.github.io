@@ -12,6 +12,7 @@ const SHEETS = {
   members: ['id', 'name', 'key', 'role', 'joinedAt', 'avatar', 'height', 'weight', 'birthYear', 'sex', 'bodyPub', 'motto'],
   entries: ['id', 'memberId', 'date', 'kind', 'minutes', 'km', 'memo', 'photoId', 'hidden', 'createdAt', 'updatedAt', 'intensity', 'speed', 'steps'],
   settings: ['key', 'value'],
+  reactions: ['id', 'entryId', 'memberId', 'emoji', 'createdAt'],
   inbody: ['id', 'memberId', 'date', 'weight', 'muscle', 'fatMass', 'fatPct', 'bmi', 'bmr', 'score', 'photoId', 'public', 'createdAt', 'updatedAt', 'pubFields'],
 };
 // 몸 정보(members 시트)와 인바디 측정값의 허용 범위
@@ -31,6 +32,7 @@ const INBODY_FIELDS = {
 };
 const DEFAULT_SETTINGS = { title: '주 3회 운동 내기', goal: '3', fine: '10000', start: '', note: '', rules: '[]' };
 const MAX_RULES = 20;
+const REACTION_EMOJIS = ['👍', '🔥', '💪', '👏', '😂', '❤️'];
 const PHOTO_FOLDER_NAME = 'healthy-photos';
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
@@ -280,6 +282,20 @@ const ACTIONS = {
     return stateFor_(me);
   },
 
+  // 기록에 이모지 반응: 같은 이모지를 다시 누르면 취소
+  react: (me, req) => {
+    const emoji = String(req.emoji || '');
+    if (REACTION_EMOJIS.indexOf(emoji) < 0) throw fail_('invalid', '고를 수 없는 이모지예요.');
+    withLock_(() => {
+      if (!table_('entries').rows.some((r) => r.id === req.entryId)) throw fail_('not_found', '기록을 찾을 수 없어요.');
+      const t = table_('reactions');
+      const mine = t.rows.find((r) => r.entryId === req.entryId && r.memberId === me.id && r.emoji === emoji);
+      if (mine) t.sh.deleteRow(mine._row);
+      else writeRow_(t.sh, null, [ 'r' + uid_(12), req.entryId, me.id, emoji, String(Date.now()) ]);
+    });
+    return stateFor_(me);
+  },
+
   deleteInbody: (me, req) => {
     let photo = '';
     withLock_(() => {
@@ -398,12 +414,17 @@ function stateFor_(me) {
       }
       return e;
     });
+  const entryIds = {};
+  entries.forEach((e) => (entryIds[e.id] = true));
   return {
     me: { id: me.id, name: me.name, role: me.role },
     members,
     entries,
     bodies,
     inbody,
+    reactions: table_('reactions').rows
+      .filter((r) => ids[r.memberId] && entryIds[r.entryId])
+      .map((r) => ({ entryId: r.entryId, memberId: r.memberId, emoji: r.emoji, at: Number(r.createdAt) || 0 })),
     settings: settingsOut_(),
   };
 }
@@ -599,7 +620,7 @@ function sheet_(name) {
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(name);
   if (!sh) {
-    if (name !== 'inbody') throw fail_('not_setup', '시트가 없어요. Apps Script에서 setup을 먼저 실행해주세요.');
+    if (name !== 'inbody' && name !== 'reactions') throw fail_('not_setup', '시트가 없어요. Apps Script에서 setup을 먼저 실행해주세요.');
     // 기능 추가로 새로 생긴 시트는 처음 쓸 때 만듦
     sh = ss.insertSheet(name);
     sh.getRange(1, 1, 1, SHEETS[name].length).setValues([SHEETS[name]]).setFontWeight('bold');

@@ -144,6 +144,37 @@ img.avatar { object-fit: cover; }
 .mottoinput { width: 100%; min-width: 0; font: inherit; font-size: 13px; border: 1.5px solid var(--accent); background: var(--surface); color: var(--ink); border-radius: 6px; padding: 2px 6px; }
 .mhead .who { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .toprow { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.topbtns { display: flex; align-items: center; gap: 8px; }
+.bellbtn { position: relative; width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.bellbtn:hover { border-color: var(--accent); color: var(--accent); }
+.bellbtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.bellbtn .count { position: absolute; top: -5px; right: -6px; min-width: 18px; height: 18px; border-radius: 999px; background: var(--bad); color: #FFFFFF; font-size: 11px; font-weight: 700; display: grid; place-items: center; padding: 0 5px; box-shadow: 0 0 0 2px var(--bg); font-family: var(--font-num); }
+.notilist { display: flex; flex-direction: column; gap: 6px; }
+.noti { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 12px; padding: 10px 12px; cursor: pointer; font: inherit; }
+.noti.unread { border-color: var(--accent); background: var(--accent-soft); }
+.noti.tip { cursor: default; border-style: dashed; }
+.noti .avatar { width: 32px; height: 32px; font-size: 13px; }
+.noti .ntext { flex: 1; min-width: 0; font-size: 14px; line-height: 1.45; }
+.noti .ntext small { display: block; color: var(--muted); font-size: 12px; }
+.noti .nicon { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-weight: 700; flex: none; }
+.card.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { 0%, 30% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+/* 이모지 반응 */
+.reacts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.react { display: inline-flex; align-items: center; gap: 4px; border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 2px 9px 2px 7px; font-size: 14px; cursor: pointer; }
+.react .num { font-size: 12px; color: var(--muted); }
+.react.mine { border-color: var(--accent); background: var(--accent-soft); }
+.react.mine .num { color: var(--accent); font-weight: 600; }
+.reactadd { position: relative; }
+.reactbtn { display: inline-flex; align-items: center; gap: 1px; border: 1.5px dashed var(--line); background: none; color: var(--muted); border-radius: 999px; padding: 3px 9px; cursor: pointer; font-size: 13px; }
+.reactbtn:hover { color: var(--accent); border-color: var(--accent); }
+.reactbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+.picker { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 5; display: flex; gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px; box-shadow: 0 6px 18px rgba(0, 0, 0, .14); }
+.picker button { border: 0; background: none; font-size: 22px; line-height: 1; width: 38px; height: 38px; border-radius: 50%; cursor: pointer; }
+.picker button:hover, .picker button:focus-visible { background: var(--accent-soft); }
+@media (prefers-reduced-motion: no-preference) { .picker:not([hidden]) { animation: rise .14s ease-out; } }
+
 .guidebtn { position: relative; display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 4px 12px 4px 5px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
 .guidebtn:hover { border-color: var(--accent); color: var(--accent); }
 .guidebtn .q { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-weight: 700; font-size: 12px; }

@@ -39,7 +39,10 @@
   <header class="top">
     <div class="toprow">
       <div class="eyebrow">JJJ Healthy Girl <span class="sync" id="syncNote" hidden>최신 기록 확인 중…</span></div>
+      <div class="topbtns">
+      <button type="button" class="bellbtn" id="openNoti" aria-label="알림"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1 1.2H3zM6.5 13.8a1.6 1.6 0 0 0 3 0"/></svg><span class="count" id="notiCount" hidden>0</span></button>
       <button type="button" class="guidebtn" id="openGuide"><span class="q" aria-hidden="true">?</span>사용 가이드<span class="newdot" id="guideDot" hidden></span></button>
+      </div>
     </div>
     <h1 id="title">주 3회 운동 내기</h1>
     <div class="rules" id="rules"></div>
@@ -276,6 +279,16 @@
   </form>
 </div>
 
+<!-- 알림함 -->
+<div class="scrim" id="notiSheet" hidden>
+  <div class="sheet">
+    <h3>알림</h3>
+    <div class="notilist" id="notiList"></div>
+    <p class="veil-note">친구의 새 기록과 내 기록에 남긴 이모지가 여기에 모여요. 페이지를 열 때마다 새로 확인해요.</p>
+    <div class="sheet-foot"><button type="button" class="btn primary" data-close>닫기</button></div>
+  </div>
+</div>
+
 <!-- 사용 가이드 -->
 <div class="scrim" id="guideSheet" hidden>
   <div class="sheet guide">
@@ -301,6 +314,7 @@
         <li><b>강도</b>(가볍게·보통·힘들게)는 칼로리 추정에 쓰여요. 러닝·걷기·자전거는 속도·거리·걸음 수를 적으면 그 속도에 맞춰 계산해요.</li>
         <li>내 기록 카드의 <b>수정 / 숨기기 / 삭제</b>로 고칠 수 있어요. 삭제는 한 번 더 눌러야 지워져요.</li>
         <li><b>숨기기</b>를 하면 사진과 메모가 친구들에게 안 보여요. 운동한 날과 종목은 그대로 인정돼요.</li>
+        <li>친구 기록 아래 <b>☺+</b>를 눌러 이모지(👍 🔥 💪 👏 😂 ❤️)를 남길 수 있어요. 같은 이모지를 다시 누르면 취소돼요. 이모지를 꾹 누르거나 마우스를 올리면 누가 남겼는지 보여요.</li>
       </ul>
     </details>
 
@@ -353,6 +367,15 @@
         <li>몸무게는 그날 기준 가장 최근 인바디 체중, 없으면 내 몸 기록의 몸무게를 써요.</li>
         <li>몸무게는 친구들에게 보내지 않고, 계산된 <b>칼로리 숫자만</b> 보여요.</li>
         <li>칼로리는 대략적인 추정치(±20~30%)예요.</li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>알림</summary>
+      <ul>
+        <li>오른쪽 위 <b>종 모양</b>을 누르면 친구의 새 기록과 내 기록에 남긴 이모지가 보여요. 새 알림 개수가 빨간 숫자로 떠요.</li>
+        <li>이번 주 목표를 아직 못 채웠으면 남은 일수를 알려줘요.</li>
+        <li>알림은 페이지를 열었을 때 확인돼요. 휴대폰 잠금 화면 알림은 아직 없어요.</li>
       </ul>
     </details>
 
