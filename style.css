@@ -436,6 +436,11 @@ img.avatar { object-fit: cover; }
 .cfgroup li.none { list-style: none; margin-left: -18px; color: var(--muted); }
 .cfnotes { font-size: 13px; color: var(--muted); }
 
+.backupbox { display: flex; flex-direction: column; gap: 8px; }
+.backupbox .row-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.backupbox a.btn { text-decoration: none; color: var(--ink); display: inline-flex; align-items: center; }
+.backupbox .veil-note b { color: var(--ink); }
+
 /* Roster */
 .roster { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .mrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 12px; border-top: 1px solid var(--line); }

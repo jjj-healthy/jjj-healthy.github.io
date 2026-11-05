@@ -204,6 +204,14 @@
       <button type="submit" class="btn primary">추가</button>
     </form>
     <p class="err" id="manageErr" hidden></p>
+    <div class="backupbox">
+      <div class="rulegroup"><b>자동 백업</b><span>구글 드라이브 healthy-backup 폴더</span></div>
+      <p class="veil-note" id="backupInfo">불러오는 중…</p>
+      <div class="row-btns">
+        <button type="button" class="btn" id="backupNow">지금 백업하기</button>
+        <a class="btn" id="backupOpen" href="#" target="_blank" rel="noopener" hidden>백업 폴더 열기</a>
+      </div>
+    </div>
     <div class="sheet-foot"><button type="button" class="btn" data-close>닫기</button></div>
   </div>
 </div>
@@ -403,6 +411,7 @@
         <li><b>참가자 관리</b>(맨 아래): 친구 추가 → <b>링크 복사</b>로 개인톡에 보내요. 링크가 새면 <b>재발급</b>, 빠지는 사람은 <b>내보내기</b>.</li>
         <li><b>규칙 수정</b>(맨 위): 내기 이름(큰 제목), 주당 목표, 벌금, 시작일, 추가 규칙을 바꿔요.</li>
         <li>다른 사람 기록 카드의 <b>관리자 삭제</b>로 잘못된 기록을 지울 수 있어요.</li>
+        <li><b>자동 백업</b>: 매주 월요일 새벽에 드라이브 <b>healthy-backup</b> 폴더로 백업돼요. <b>멤버별</b> 폴더에 그 사람의 기록 시트와 사진이, <b>전체 기록</b> 폴더에 날짜별 전체 시트(최근 8개)가 있어요. 참가자 관리 맨 아래에서 <b>지금 백업하기</b>도 할 수 있어요.</li>
         <li>모든 기록은 구글 시트에 있어요. 시트에서 직접 고쳐도 되고, 행을 지우거나 추가한 건 최대 5분 뒤 반영돼요.</li>
         <li>Code.gs를 고친 뒤에는 <b>배포 관리 → 새 버전</b>으로 배포해야 반영돼요.</li>
       </ul>

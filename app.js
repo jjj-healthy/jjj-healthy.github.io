@@ -670,9 +670,37 @@
     $("#manageErr").hidden = true; $("#a-name").value = "";
     $("#roster").innerHTML = `<div class="empty">불러오는 중…</div>`;
     openSheet("manageSheet");
+    loadBackup();
     try { renderRoster((await api("members")).roster); }
     catch (e) { $("#manageErr").textContent = errText(e); $("#manageErr").hidden = false; }
   }
+
+  // 백업 상태 (관리자)
+  function renderBackup(b) {
+    const parts = [];
+    parts.push(b.last ? `마지막 백업: <b>${esc(b.lastText)}</b>${b.note ? ` · ${esc(b.note)}` : ""}` : "아직 백업한 적이 없어요.");
+    if (b.auto === true) parts.push("자동 백업 켜짐: 매주 월요일 새벽 4~5시");
+    else parts.push("자동 백업이 아직 꺼져 있어요. Apps Script 편집기에서 <b>setupBackup</b>을 한 번 실행하면 켜져요.");
+    $("#backupInfo").innerHTML = parts.join("<br>");
+    $("#backupOpen").hidden = !b.folderUrl;
+    if (b.folderUrl) $("#backupOpen").href = b.folderUrl;
+  }
+  async function loadBackup() {
+    $("#backupInfo").textContent = "불러오는 중…"; $("#backupOpen").hidden = true;
+    try { renderBackup((await api("backupStatus")).backup); }
+    catch (e) {
+      $("#backupInfo").textContent = e && e.error === "unknown_action"
+        ? "Apps Script를 새 버전으로 배포하면 쓸 수 있어요."
+        : errText(e);
+    }
+  }
+  $("#backupNow").addEventListener("click", async () => {
+    const btn = $("#backupNow");
+    btn.disabled = true; btn.textContent = "백업 중… (사진이 많으면 몇 분 걸려요)";
+    try { renderBackup((await api("backupNow")).backup); toast("백업했어요"); }
+    catch (e) { $("#backupInfo").textContent = e && e.error === "unknown_action" ? "Apps Script를 새 버전으로 배포하면 쓸 수 있어요." : errText(e); }
+    finally { btn.disabled = false; btn.textContent = "지금 백업하기"; }
+  });
   $("#addForm").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const name = $("#a-name").value.trim();

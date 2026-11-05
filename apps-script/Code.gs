@@ -309,6 +309,22 @@ const ACTIONS = {
   },
 
   // --- 관리자: 참가자 관리 ---
+  // --- 관리자: 백업 ---
+  backupStatus: (me) => {
+    requireAdmin_(me);
+    return { backup: backupStatus_() };
+  },
+
+  backupNow: (me) => {
+    requireAdmin_(me);
+    try {
+      return { backup: backup() };
+    } catch (err) {
+      if (/permission|권한|authoriz/i.test(String(err.message))) throw fail_('needs_setup', 'Apps Script 편집기에서 setupBackup을 한 번 실행해서 백업 권한을 허용해주세요.');
+      throw err;
+    }
+  },
+
   members: (me) => {
     requireAdmin_(me);
     return { roster: roster_() };
@@ -789,4 +805,223 @@ function mondayOf_(s) {
   const d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
   d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
   return Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
+}
+
+// ---------------------------------------------------------------------------
+// 자동 백업: 드라이브 healthy-backup 폴더에 멤버별 폴더(기록 시트 + 사진)와 전체 기록을 만듦
+//   healthy-backup/멤버별/<이름>/<이름> 기록   (운동 기록 · 인바디 · 몸 정보 탭, 매번 최신으로 덮어씀)
+//   healthy-backup/멤버별/<이름>/사진/          (새로 생긴 사진만 복사, 원본을 지워도 남아 있음)
+//   healthy-backup/전체 기록/JJJ Healthy Girl 백업 <날짜>  (요약 + 멤버별 탭, 최근 BACKUP_KEEP개 보관)
+// 처음 한 번 Apps Script 편집기에서 setupBackup을 실행하면 권한을 받고 매주 월요일 새벽에 자동으로 돌아요.
+// ---------------------------------------------------------------------------
+const BACKUP_ROOT_NAME = 'healthy-backup';
+const BACKUP_KEEP = 8;
+const BACKUP_TIME_LIMIT_MS = 4.5 * 60 * 1000; // Apps Script 실행 제한(6분) 전에 멈추고 다음 번에 이어서 함
+
+function setupBackup() {
+  ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === 'backup')
+    .forEach((t) => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('backup').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(4).create();
+  const st = backup();
+  Logger.log('자동 백업을 켰어요 (매주 월요일 새벽 4~5시). ' + st.note);
+  Logger.log('백업 폴더: ' + st.folderUrl);
+}
+
+function backup() {
+  const started = Date.now();
+  clearCache_();
+  const tz = Session.getScriptTimeZone();
+  const stamp = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm');
+  const root = backupRoot_();
+  const byMember = childFolder_(root, '멤버별', 'healthy:members');
+  const fullDir = childFolder_(root, '전체 기록', 'healthy:full');
+
+  const members = table_('members').rows;
+  const entries = table_('entries').rows.filter((r) => isDate_(r.date)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const inbody = table_('inbody').rows.filter((r) => isDate_(r.date)).sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  let copied = 0, pending = 0;
+  const summary = [['멤버', '운동한 날', '기록 수', '총 운동 시간(분)', '인바디 기록', '백업한 사진']];
+  const perMember = [];
+
+  members.forEach((m) => {
+    const name = String(m.name || '이름 없음');
+    const dir = childFolder_(byMember, safeFileName_(name), 'healthy:member:' + m.id);
+    const photoDir = childFolder_(dir, '사진', 'healthy:photos:' + m.id);
+    const myEntries = entries.filter((e) => e.memberId === m.id);
+    const myInbody = inbody.filter((r) => r.memberId === m.id);
+
+    // 사진: 이미 복사한 것(설명에 원본 id를 적어 둠)은 건너뜀
+    const copies = {};
+    const it = photoDir.getFiles();
+    while (it.hasNext()) { const f = it.next(); const d = f.getDescription(); if (d) copies[d] = f.getId(); }
+    const wanted = [];
+    myEntries.forEach((e) => { if (e.photoId) wanted.push([e.photoId, e.date + '_' + e.kind]); });
+    myInbody.forEach((r) => { if (r.photoId) wanted.push([r.photoId, r.date + '_인바디 결과지']); });
+    if (m.avatar) wanted.push([m.avatar, '프로필 사진']);
+    wanted.forEach(([id, label]) => {
+      if (copies[id]) return;
+      if (Date.now() - started > BACKUP_TIME_LIMIT_MS) { pending++; return; }
+      try {
+        const src = DriveApp.getFileById(id);
+        const ext = (src.getMimeType().split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+        const copy = src.makeCopy(safeFileName_(label) + '_' + id.slice(-6) + '.' + ext, photoDir);
+        copy.setDescription(id);
+        copies[id] = copy.getId();
+        copied++;
+      } catch (_) { /* 원본이 이미 완전히 지워졌으면 건너뜀 */ }
+    });
+
+    const tabs = memberTabs_(m, myEntries, myInbody, copies);
+    // 멤버별 기록 시트 (같은 파일을 계속 갱신)
+    const ss = memberSheet_(dir, name, m.id);
+    writeTab_(ss, '운동 기록', tabs.entries);
+    writeTab_(ss, '인바디', tabs.inbody);
+    writeTab_(ss, '몸 정보', tabs.body);
+    dropDefaultTab_(ss);
+
+    const days = {};
+    myEntries.forEach((e) => (days[e.date] = true));
+    summary.push([name, Object.keys(days).length, myEntries.length, myEntries.reduce((s, e) => s + (Number(e.minutes) || 0), 0), myInbody.length, Object.keys(copies).length]);
+    perMember.push({ name, tabs });
+  });
+
+  // 전체 기록 스냅샷 (요약 + 멤버별 탭)
+  const full = SpreadsheetApp.create('JJJ Healthy Girl 백업 ' + stamp);
+  DriveApp.getFileById(full.getId()).moveTo(fullDir);
+  const settings = readSettings_();
+  writeTab_(full, '요약', [['백업 시각', stamp], ['내기 이름', settings.title], ['주당 목표', settings.goal + '일'], ['미달 벌금', settings.fine + '원'], ['시작일', settings.start], []].concat(summary));
+  const used = {};
+  perMember.forEach((p) => {
+    let tab = safeTabName_(p.name), n = 2;
+    while (used[tab]) tab = safeTabName_(p.name) + ' ' + n++;
+    used[tab] = true;
+    writeTab_(full, tab, p.tabs.entries.concat([[], ['인바디']], p.tabs.inbody, [[], ['몸 정보']], p.tabs.body));
+  });
+  dropDefaultTab_(full);
+  pruneSnapshots_(fullDir);
+
+  const note = `멤버 ${members.length}명 · 기록 ${entries.length}개 · 사진 ${copied}장 새로 복사` + (pending ? ` · 남은 사진 ${pending}장은 다음 백업 때 이어서 복사` : '');
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('BACKUP_LAST', String(Date.now()));
+  props.setProperty('BACKUP_NOTE', note);
+  return backupStatus_();
+}
+
+function backupStatus_() {
+  const props = PropertiesService.getScriptProperties();
+  const last = Number(props.getProperty('BACKUP_LAST')) || 0;
+  let auto = null;
+  try { auto = ScriptApp.getProjectTriggers().some((t) => t.getHandlerFunction() === 'backup'); } catch (_) {}
+  const id = props.getProperty('BACKUP_FOLDER_ID');
+  return {
+    last,
+    lastText: last ? Utilities.formatDate(new Date(last), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm') : '',
+    note: props.getProperty('BACKUP_NOTE') || '',
+    auto,
+    folderUrl: id ? 'https://drive.google.com/drive/folders/' + id : '',
+  };
+}
+
+function memberTabs_(m, list, inbodyRows, copies) {
+  const link = (id) => (id ? 'https://drive.google.com/file/d/' + (copies[id] || id) + '/view' : '');
+  const INT = { light: '가볍게', normal: '보통', hard: '힘들게' };
+  const entries = [['날짜', '종목', '운동 시간(분)', '거리(km)', '속도(km/h)', '걸음 수', '강도', '메모', '숨김', '사진']].concat(
+    list.map((e) => [e.date, e.kind, Number(e.minutes) || '', Number(e.km) || '', Number(e.speed) || '', Number(e.steps) || '', INT[e.intensity] || '보통', e.memo, e.hidden === 'Y' ? '숨김' : '', link(e.photoId)])
+  );
+  const inbody = [['측정일', '체중(kg)', '골격근량(kg)', '체지방량(kg)', '체지방률(%)', 'BMI', '기초대사량(kcal)', '인바디 점수', '친구에게 공개한 항목', '결과지 사진']].concat(
+    inbodyRows.map((r) => {
+      const pub = r.pubFields ? r.pubFields.split(',') : r.public === 'Y' ? INBODY_PUB_KEYS : [];
+      const labels = pub.map((k) => (k === 'photo' ? '사진' : (INBODY_FIELDS[k] || {}).label)).filter(Boolean);
+      const num = (v) => (v === '' || v == null ? '' : Number(v));
+      return [r.date, num(r.weight), num(r.muscle), num(r.fatMass), num(r.fatPct), num(r.bmi), num(r.bmr), num(r.score), labels.join(', ') || '없음 (나만 보기)', link(r.photoId)];
+    })
+  );
+  const pub = String(m.bodyPub || '').split(',');
+  const sex = { F: '여성', M: '남성' };
+  const body = [['항목', '값', '친구에게 공개'],
+    ['이름', m.name, '공개'],
+    ['한 마디', m.motto || '', '공개'],
+    ['키(cm)', m.height ? Number(m.height) : '', pub.indexOf('height') >= 0 ? '공개' : '나만 보기'],
+    ['몸무게(kg)', m.weight ? Number(m.weight) : '', pub.indexOf('weight') >= 0 ? '공개' : '나만 보기'],
+    ['출생 연도', m.birthYear ? Number(m.birthYear) : '', pub.indexOf('birthYear') >= 0 ? '공개' : '나만 보기'],
+    ['성별', sex[m.sex] || '', pub.indexOf('sex') >= 0 ? '공개' : '나만 보기'],
+    ['참가일', m.joinedAt ? Utilities.formatDate(new Date(Number(m.joinedAt)), Session.getScriptTimeZone(), 'yyyy-MM-dd') : '', ''],
+    ['프로필 사진', link(m.avatar), ''],
+  ];
+  return { entries, inbody, body };
+}
+
+function backupRoot_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('BACKUP_FOLDER_ID');
+  if (id) {
+    try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (_) {}
+  }
+  const folder = DriveApp.createFolder(BACKUP_ROOT_NAME);
+  props.setProperty('BACKUP_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+// 설명(description)에 적어 둔 키로 폴더를 찾음. 이름이 바뀌면 폴더 이름도 따라 바꿈
+function childFolder_(parent, name, key) {
+  const it = parent.getFolders();
+  while (it.hasNext()) {
+    const f = it.next();
+    if (f.getDescription() === key) { if (f.getName() !== name) f.setName(name); return f; }
+  }
+  const f = parent.createFolder(name);
+  f.setDescription(key);
+  return f;
+}
+
+function memberSheet_(dir, name, memberId) {
+  const key = 'healthy:sheet:' + memberId;
+  const it = dir.getFiles();
+  while (it.hasNext()) {
+    const f = it.next();
+    if (f.getDescription() === key) {
+      if (f.getName() !== name + ' 기록') f.setName(name + ' 기록');
+      return SpreadsheetApp.openById(f.getId());
+    }
+  }
+  const ss = SpreadsheetApp.create(name + ' 기록');
+  const file = DriveApp.getFileById(ss.getId());
+  file.moveTo(dir);
+  file.setDescription(key);
+  return ss;
+}
+
+function writeTab_(ss, name, rows) {
+  const sh = ss.getSheetByName(name) || ss.insertSheet(name);
+  sh.clear();
+  if (!rows.length) return;
+  const width = Math.max.apply(null, rows.map((r) => r.length || 1));
+  const data = rows.map((r) => { const out = r.map((v) => (typeof v === 'string' ? safe_(v) : v)); while (out.length < width) out.push(''); return out; });
+  sh.getRange(1, 1, data.length, width).setValues(data);
+  sh.getRange(1, 1, 1, width).setFontWeight('bold');
+  sh.setFrozenRows(1);
+}
+
+function dropDefaultTab_(ss) {
+  ss.getSheets().forEach((sh) => {
+    if (ss.getSheets().length > 1 && /^(Sheet1|시트1)$/.test(sh.getName())) ss.deleteSheet(sh);
+  });
+}
+
+function pruneSnapshots_(dir) {
+  const files = [];
+  const it = dir.getFiles();
+  while (it.hasNext()) files.push(it.next());
+  files.sort((a, b) => b.getDateCreated() - a.getDateCreated());
+  files.slice(BACKUP_KEEP).forEach((f) => f.setTrashed(true));
+}
+
+function safeFileName_(s) {
+  return String(s).replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 80) || '이름 없음';
+}
+
+function safeTabName_(s) {
+  return String(s).replace(/[\[\]*?\/\\:']/g, ' ').trim().slice(0, 90) || '멤버';
 }
