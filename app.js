@@ -156,6 +156,12 @@
   const selMonday = () => addDays(mondayOf(new Date()), S.weekOffset * 7);
   const selMonth = () => { const t = new Date(); return new Date(t.getFullYear(), t.getMonth() + S.monthOffset, 1); };
   const hueOf = (id) => { let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
+  // 기록권 아이콘과 "기록권만 있는 날" 판별
+  const TICKET = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5.2V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1.2a1.8 1.8 0 0 0 0 3.6V10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8.8a1.8 1.8 0 0 0 0-3.6zM10 3.5v7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-dasharray="0"/></svg>`;
+  const passOnlyDays = (list) => {
+    const real = new Set(list.filter((e) => !e.pass).map((e) => e.date));
+    return new Set(list.filter((e) => e.pass && !real.has(e.date)).map((e) => e.date));
+  };
   const kcalIn = (list, a, b) => list.reduce((t, e) => t + (e.date >= a && e.date <= b ? Number(e.kcal) || 0 : 0), 0);
   // 나만의 한 마디: 비어 있으면 흐린 기본 문구, 내 것은 연필 버튼으로 바로 고침
   const PENCIL = `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M11.3 2.3a1.6 1.6 0 0 1 2.3 2.3L5.4 12.8 2.5 13.5l.7-2.9z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
@@ -256,9 +262,11 @@
         else if (!isCurrent) chip = `<span class="chip bad">벌금 ${esc(won(c.fine))}</span>`;
         else if (c.goal - done > daysLeft) chip = `<span class="chip bad">미달 확정</span>`;
         else chip = `<span class="chip wait">${c.goal - done}일 더</span>`;
+        const passDays = passOnlyDays(r.m.list);
         const dots = WD.map((w, k) => {
           const d = ymd(addDays(mon, k));
-          return `<span class="dot${r.days.has(d) ? " on" : ""}${d === today ? " today" : ""}" title="${d}">${w}</span>`;
+          const pass = passDays.has(d);
+          return `<span class="dot${r.days.has(d) ? (pass ? " pass" : " on") : ""}${d === today ? " today" : ""}" title="${d}${pass ? " 기록권" : ""}">${w}</span>`;
         }).join("");
         const isMe = S.me && r.m.id === S.me.id;
         // 벌금이 생긴 멤버에게만 표시
@@ -271,6 +279,7 @@
           <div class="mscore"><span class="count">${done}<small>/${c.goal}일</small></span>${chip}</div>
           <div class="dots">${dots}</div>
           ${r.kcal ? `<span class="kcalsum">약 ${r.kcal.toLocaleString("ko-KR")}kcal</span>` : ""}
+          ${r.m.passes > 0 ? (isMe ? `<button type="button" class="passchip" data-usepass>${TICKET}기록권 ${r.m.passes}장 · 쓰기</button>` : `<span class="passchip">${TICKET}기록권 ${r.m.passes}장</span>`) : ""}
           ${owed}
         </div>`;
       }).join("");
@@ -304,6 +313,16 @@
           Number(e.steps) > 0 ? `${Number(e.steps).toLocaleString("ko-KR")}걸음` : "",
           e.kcal > 0 ? `약 ${Number(e.kcal).toLocaleString("ko-KR")}kcal` : "",
         ].filter(Boolean).join(" · ");
+        if (e.pass) {
+          const passActs = mine
+            ? `<div class="actions"><button type="button" class="act danger" data-act="del" data-id="${esc(e.id)}">기록권 사용 취소</button></div>`
+            : isAdmin ? `<div class="actions"><button type="button" class="act danger" data-act="del" data-id="${esc(e.id)}">관리자 취소 (기록권 돌려주기)</button></div>` : "";
+          return `${head}<article class="card passcard" id="entry-${esc(e.id)}">
+            <div class="card-head">${avatar(m)}<span class="name">${esc(m.name || "친구")}</span><span class="badge pass">${TICKET}기록권</span><span class="when num">${d.getMonth() + 1}.${d.getDate()}</span></div>
+            <p class="passline">기록권으로 채운 날이에요. 이번 주 운동한 날로 인정돼요.</p>
+            ${e.memo ? `<p class="memo">${esc(e.memo)}</p>` : ""}${reactionBar(e)}${passActs}
+          </article>`;
+        }
         const veiled = e.hidden && !mine;
         const photo = !veiled && validFileId(e.photo)
           ? `<button type="button" class="photo" data-act="zoom" data-id="${esc(e.photo)}"><img src="${esc(photoSrc(e.photo, 1200))}" data-alt="${esc(photoAlt(e.photo, 1200))}" alt="${esc(m.name)}의 운동 사진" loading="lazy" referrerpolicy="no-referrer"></button>` : "";
@@ -346,7 +365,8 @@
     const rows = ms.map((m) => {
       const list = m.list.filter((e) => e.date >= a && e.date <= b);
       const days = new Set(list.map((e) => e.date));
-      days.forEach((d) => (byDate[d] = byDate[d] || []).push(m));
+      const po = passOnlyDays(list);
+      days.forEach((d) => (byDate[d] = byDate[d] || []).push({ m, pass: po.has(d) }));
       return {
         m, days: days.size, n: list.length,
         mins: list.reduce((t, e) => t + (Number(e.minutes) || 0), 0),
@@ -360,9 +380,11 @@
     for (let d = 1; d <= mEnd.getDate(); d++) {
       const ds = ymd(new Date(m1.getFullYear(), m1.getMonth(), d));
       const who = byDate[ds] || [];
-      const dots = who.slice(0, 6).map((m) => `<i style="background:hsl(${hueOf(m.id)} 55% 42%)" title="${esc(m.name)}"></i>`).join("")
+      const dots = who.slice(0, 6).map(({ m, pass }) => pass
+          ? `<i class="pass" style="border-color:hsl(${hueOf(m.id)} 55% 42%)" title="${esc(m.name)} (기록권)"></i>`
+          : `<i style="background:hsl(${hueOf(m.id)} 55% 42%)" title="${esc(m.name)}"></i>`).join("")
         + (who.length > 6 ? `<em>+${who.length - 6}</em>` : "");
-      const label = `${m1.getMonth() + 1}월 ${d}일${who.length ? ": " + who.map((m) => m.name).join(", ") : ""}`;
+      const label = `${m1.getMonth() + 1}월 ${d}일${who.length ? ": " + who.map(({ m, pass }) => m.name + (pass ? "(기록권)" : "")).join(", ") : ""}`;
       cal += `<div class="cday${who.length ? " has" : ""}${ds === today ? " today" : ""}${ds > today ? " future" : ""}" title="${esc(label)}" aria-label="${esc(label)}"><span class="cnum">${d}</span><span class="cdots">${dots}</span></div>`;
     }
 
@@ -493,6 +515,8 @@
     $("#f-memo").value = e?.memo || "";
     $("#f-hidden").checked = !!e?.hidden;
     setIntensity(e?.intensity || "normal");
+    $("#passHint").hidden = !!e || !myPasses();
+    if (!$("#passHint").hidden) $("#passHint").querySelector("button").textContent = `기록권 쓰기 (${myPasses()}장 남음)`;
     $("#f-photo").value = "";
     setPreview(e && validFileId(e.photo) ? photoSrc(e.photo, 800) : null);
     $("#entryErr").hidden = true;
@@ -659,6 +683,7 @@
   function renderRoster(roster) {
     $("#roster").innerHTML = roster.map((m) => `<div class="mrow">
         ${avatar(m)}<span class="mname">${esc(m.name)}${m.role === "admin" ? " · 관리자" : ""}</span>
+        <span class="passctl" aria-label="${esc(m.name)}의 기록권">${TICKET}<button type="button" class="act" data-act="pass-" data-id="${esc(m.id)}" aria-label="기록권 한 장 빼기"${m.passes ? "" : " disabled"}>−</button><b class="num">${m.passes || 0}</b><button type="button" class="act" data-act="pass+" data-id="${esc(m.id)}" aria-label="기록권 한 장 주기">+</button></span>
         <span class="mbtns">
           <button type="button" class="act" data-act="copy" data-id="${esc(m.id)}">링크 복사</button>
           ${m.role === "admin" ? "" : `<button type="button" class="act" data-act="reset" data-id="${esc(m.id)}">재발급</button>
@@ -715,6 +740,17 @@
   $("#roster").addEventListener("click", async (ev) => {
     const b = ev.target.closest("[data-act]"); if (!b) return;
     const id = b.dataset.id;
+    if (b.dataset.act === "pass+" || b.dataset.act === "pass-") {
+      const cur = Number(b.parentElement.querySelector("b").textContent) || 0;
+      const count = Math.max(0, cur + (b.dataset.act === "pass+" ? 1 : -1));
+      b.parentElement.querySelectorAll("button").forEach((x) => (x.disabled = true));
+      try {
+        const data = await api("setPasses", { id, count });
+        apply(data); renderRoster(data.roster);
+        toast(b.dataset.act === "pass+" ? "기록권을 한 장 줬어요" : "기록권을 한 장 뺐어요");
+      } catch (e) { $("#manageErr").textContent = errText(e); $("#manageErr").hidden = false; renderRoster((await api("members")).roster); }
+      return;
+    }
     if (b.dataset.act === "copy") {
       const box = $(`#roster [data-link="${CSS.escape(id)}"]`);
       try { await navigator.clipboard.writeText(box.value); toast("링크를 복사했어요"); }
@@ -1058,9 +1094,13 @@
   ];
   const XP_RULE = "운동한 날 10XP · 주간 목표 달성 30XP · 업적 단계마다 50XP";
 
-  function statsFor(list, goal) {
+  // 기록권은 주간 목표(내기)에만 인정하고, 운동량·연속 운동 같은 업적에는 넣지 않음
+  function statsFor(all, goal) {
+    const list = all.filter((e) => !e.pass);
     const dates = [...new Set(list.map((e) => e.date))].sort();
     const set = new Set(dates);
+    const betDates = [...new Set(all.map((e) => e.date))].sort();
+    const betSet = new Set(betDates);
     let bestDayStreak = 0, run = 0, prev = null;
     dates.forEach((d) => {
       const t = parseYmd(d);
@@ -1068,13 +1108,13 @@
       bestDayStreak = Math.max(bestDayStreak, run); prev = t;
     });
     let bestGoalStreak = 0, goalWeeks = 0, perfectWeeks = 0, weekends = 0;
-    if (dates.length) {
+    if (betDates.length) {
       const thisMon = mondayOf(new Date());
-      let w = mondayOf(parseYmd(dates[0])), streak = 0, guard = 0;
+      let w = mondayOf(parseYmd(betDates[0])), streak = 0, guard = 0;
       while (w <= thisMon && guard++ < 1000) {
-        let n = 0;
-        for (let k = 0; k < 7; k++) if (set.has(ymd(addDays(w, k)))) n++;
-        if (n >= goal) { goalWeeks++; streak++; bestGoalStreak = Math.max(bestGoalStreak, streak); }
+        let n = 0, bet = 0;
+        for (let k = 0; k < 7; k++) { const d = ymd(addDays(w, k)); if (set.has(d)) n++; if (betSet.has(d)) bet++; }
+        if (bet >= goal) { goalWeeks++; streak++; bestGoalStreak = Math.max(bestGoalStreak, streak); }
         else if (+w !== +thisMon) streak = 0; // 진행 중인 이번 주는 아직 끊긴 걸로 보지 않음
         if (n === 7) perfectWeeks++;
         if (set.has(ymd(addDays(w, 5))) && set.has(ymd(addDays(w, 6)))) weekends++;
@@ -1212,7 +1252,9 @@
     const facts = Object.keys(BODY_LABELS).filter((k) => b[k]).map((k) => `<span>${esc(bodyText(k, b[k]))}<small>${pub.includes(k) ? "공개" : "나만"}</small></span>`).join("");
 
     // 요약
-    const dates = new Set(list.map((e) => e.date));
+    const real = list.filter((e) => !e.pass); // 기록권은 운동 통계에서 뺌
+    const passUsed = list.length - real.length;
+    const dates = new Set(real.map((e) => e.date));
     const mins = list.reduce((s, e) => s + (Number(e.minutes) || 0), 0);
     const km = Math.round(list.reduce((s, e) => s + (Number(e.km) || 0), 0) * 10) / 10;
     const steps = list.reduce((s, e) => s + (Number(e.steps) || 0), 0);
@@ -1224,7 +1266,7 @@
     while (streak < 520 && weekDays(w) >= c.goal) { streak++; w = addDays(w, -7); }
     const now = new Date();
     const monthA = ymd(new Date(now.getFullYear(), now.getMonth(), 1)), monthB = ymd(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-    const monthDays = new Set(list.filter((e) => e.date >= monthA && e.date <= monthB).map((e) => e.date)).size;
+    const monthDays = new Set(real.filter((e) => e.date >= monthA && e.date <= monthB).map((e) => e.date)).size;
 
     // 최근 12주
     const weeks = [];
@@ -1251,8 +1293,9 @@
       ["이번 달 운동", monthDays, "일"],
       ["연속 목표 달성", streak, "주"],
       ["전체 운동일", dates.size, "일"],
+      ...(passUsed ? [["사용한 기록권", passUsed, "회"]] : []),
       ["총 운동 시간", fmtMinutes(mins), ""],
-    ].concat(km ? [["총 거리", km, "km"]] : []).concat(steps ? [["총 걸음 수", steps.toLocaleString("ko-KR"), "걸음"]] : []).concat(kcal ? [["총 소모 칼로리(약)", kcal.toLocaleString("ko-KR"), "kcal"]] : []);
+    ].concat(myPasses() ? [["남은 기록권", myPasses(), "장"]] : []).concat(km ? [["총 거리", km, "km"]] : []).concat(steps ? [["총 걸음 수", steps.toLocaleString("ko-KR"), "걸음"]] : []).concat(kcal ? [["총 소모 칼로리(약)", kcal.toLocaleString("ko-KR"), "kcal"]] : []);
 
     $("#mePage").innerHTML = `
       <div class="mehead">${avatar(meM)}
@@ -1271,7 +1314,7 @@
       <section>
         <h3>최근 12주</h3>
         ${list.length ? `<div class="charts">
-          ${barChart({ title: "주별 운동한 날", sub: `목표 주 ${c.goal}일`, items: weeks.map((x) => ({ label: x.label, full: x.full, v: x.days })), unit: "일", goal: c.goal })}
+          ${barChart({ title: "주별 운동한 날", sub: `목표 주 ${c.goal}일${passUsed ? " · 기록권 포함" : ""}`, items: weeks.map((x) => ({ label: x.label, full: x.full, v: x.days })), unit: "일", goal: c.goal })}
           ${barChart({ title: "주별 운동 시간", items: weeks.map((x) => ({ label: x.label, full: x.full, v: x.mins })), unit: "분" })}
           ${weeks.some((x) => x.kcal) ? barChart({ title: "주별 소모 칼로리", sub: "추정치", items: weeks.map((x) => ({ label: x.label, full: x.full, v: x.kcal })), unit: "kcal" }) : ""}
           ${kinds.length ? `<figure class="chartcard"><figcaption><b>종목별 운동 시간</b><span>전체 기간</span></figcaption><div class="hbars">${kinds.map(([k, v]) => `<div class="hbar"><span class="lbl">${esc(k)}</span><span class="track"><span class="fill" style="display:block;width:${((v / kmax) * 100).toFixed(1)}%"></span></span><span class="val">${esc(fmtMinutes(v))}</span></div>`).join("")}</div></figure>` : ""}
@@ -1329,6 +1372,36 @@
     });
     input.addEventListener("blur", () => finish(true));
   });
+
+  // ---------- 기록권 ----------
+  const myPasses = () => ((S.members.find((m) => S.me && m.id === S.me.id) || {}).passes) || 0;
+  function openPass() {
+    const n = myPasses();
+    if (!n) { toast("남은 기록권이 없어요. 관리자에게 받을 수 있어요"); return; }
+    const mineDates = new Set(S.entries.filter((e) => S.me && e.memberId === S.me.id).map((e) => e.date));
+    // 오늘부터 거꾸로, 기록이 없는 가장 가까운 날을 기본값으로
+    let d = new Date(), guard = 0;
+    while (mineDates.has(ymd(d)) && guard++ < 30) d = addDays(d, -1);
+    $("#p-date").value = ymd(d); $("#p-date").max = ymd(new Date());
+    $("#p-memo").value = ""; $("#passErr").hidden = true;
+    $("#passInfo").textContent = `남은 기록권 ${n}장. 운동을 못 한 날 하루를 채울 수 있어요.`;
+    openSheet("passSheet");
+  }
+  $("#passForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const date = $("#p-date").value, err = $("#passErr");
+    if (!validDate(date)) { err.textContent = "날짜를 골라주세요."; err.hidden = false; return; }
+    if (date > ymd(new Date())) { err.textContent = "미래 날짜에는 쓸 수 없어요."; err.hidden = false; return; }
+    if (S.entries.some((e) => S.me && e.memberId === S.me.id && e.date === date)) { err.textContent = "이미 기록이 있는 날이에요. 기록이 없는 날에만 쓸 수 있어요."; err.hidden = false; return; }
+    const btn = $("#passSave"); btn.disabled = true;
+    try {
+      apply(await api("usePass", { date, memo: $("#p-memo").value.trim() }));
+      closeSheets(); toast("기록권으로 하루를 채웠어요");
+      S.weekOffset = Math.round((mondayOf(parseYmd(date)) - mondayOf(new Date())) / (7 * 864e5)); render();
+    } catch (e) { err.textContent = errText(e); err.hidden = false; }
+    finally { btn.disabled = false; }
+  });
+  document.addEventListener("click", (ev) => { if (ev.target.closest("[data-usepass]")) openPass(); });
 
   // ---------- 이모지 반응 ----------
   const REACT_EMOJIS = ["👍", "🔥", "💪", "👏", "😂", "❤️"];
@@ -1411,7 +1484,7 @@
       if (e && e.memberId === myId && r.memberId !== myId && r.at) items.push({ at: r.at, who: r.memberId, text: `내 ${e.kind || "운동"} 기록에 ${r.emoji} 반응을 남겼어요`, entry: e });
     });
     S.entries.forEach((e) => {
-      if (e.memberId !== myId && e.createdAt) items.push({ at: e.createdAt, who: e.memberId, text: `${e.kind || "운동"}${Number(e.minutes) > 0 ? ` ${e.minutes}분` : ""} 운동을 기록했어요`, entry: e });
+      if (e.memberId !== myId && e.createdAt) items.push({ at: e.createdAt, who: e.memberId, text: e.pass ? "기록권으로 하루를 채웠어요" : `${e.kind || "운동"}${Number(e.minutes) > 0 ? ` ${e.minutes}분` : ""} 운동을 기록했어요`, entry: e });
     });
     return items.sort((a, b) => b.at - a.at).slice(0, 40);
   }

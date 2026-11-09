@@ -100,6 +100,7 @@ img.avatar { object-fit: cover; }
 .dot { height: 18px; border-radius: 4px; border: 1.5px solid var(--line); font-size: 10px; display: grid; place-items: center; color: var(--muted); }
 .dot.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .dot.today { border-color: var(--ink); }
+.dot.pass { border: 1.5px dashed var(--accent); color: var(--accent); background: var(--accent-soft); }
 .score { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .score .count { font-family: var(--font-num); font-weight: 600; font-size: 22px; line-height: 1; }
 .score .count small { font-size: 14px; color: var(--muted); font-weight: 500; }
@@ -249,6 +250,7 @@ img.avatar { object-fit: cover; }
 .cday.has .cnum { color: var(--ink); font-weight: 600; }
 .cdots { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
 .cdots i { width: 9px; height: 9px; border-radius: 50%; display: block; }
+.cdots i.pass { background: transparent; border: 2px dashed; box-sizing: border-box; }
 .cdots em { font-style: normal; font-size: 10px; color: var(--muted); }
 .mstats { font-size: 12px; color: var(--muted); }
 .mstats .num { color: var(--ink); }
@@ -455,6 +457,18 @@ img.avatar { object-fit: cover; }
 .backupbox .row-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .backupbox a.btn { text-decoration: none; color: var(--ink); display: inline-flex; align-items: center; }
 .backupbox .veil-note b { color: var(--ink); }
+
+/* 기록권 */
+.passchip { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; font-size: 12px; font-weight: 600; color: var(--accent); border: 1.5px dashed var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 9px; font-family: inherit; }
+button.passchip { cursor: pointer; }
+.passchip svg, .badge.pass svg, .passctl svg { width: 14px; height: 14px; flex: none; }
+.card.passcard { border: 1.5px dashed var(--accent); background: var(--accent-soft); }
+.badge.pass { display: inline-flex; align-items: center; gap: 3px; border-color: var(--accent); color: var(--accent); }
+.passline { margin: 0; font-size: 14px; color: var(--ink); }
+.passhint { margin: 0; font-size: 13px; color: var(--muted); }
+.passctl { display: inline-flex; align-items: center; gap: 2px; color: var(--accent); }
+.passctl b { min-width: 18px; text-align: center; color: var(--ink); }
+.passctl .act { font-size: 16px; padding: 0 8px; }
 
 /* Roster */
 .roster { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }

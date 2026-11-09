@@ -9,8 +9,8 @@
  */
 
 const SHEETS = {
-  members: ['id', 'name', 'key', 'role', 'joinedAt', 'avatar', 'height', 'weight', 'birthYear', 'sex', 'bodyPub', 'motto', 'notify'],
-  entries: ['id', 'memberId', 'date', 'kind', 'minutes', 'km', 'memo', 'photoId', 'hidden', 'createdAt', 'updatedAt', 'intensity', 'speed', 'steps'],
+  members: ['id', 'name', 'key', 'role', 'joinedAt', 'avatar', 'height', 'weight', 'birthYear', 'sex', 'bodyPub', 'motto', 'notify', 'passes'],
+  entries: ['id', 'memberId', 'date', 'kind', 'minutes', 'km', 'memo', 'photoId', 'hidden', 'createdAt', 'updatedAt', 'intensity', 'speed', 'steps', 'pass'],
   settings: ['key', 'value'],
   reactions: ['id', 'entryId', 'memberId', 'emoji', 'createdAt'],
   inbody: ['id', 'memberId', 'date', 'weight', 'muscle', 'fatMass', 'fatPct', 'bmi', 'bmr', 'score', 'photoId', 'public', 'createdAt', 'updatedAt', 'pubFields'],
@@ -98,6 +98,7 @@ const ACTIONS = {
         const existing = src.id ? t.rows.find((r) => r.id === src.id) : null;
         if (src.id && !existing) throw fail_('not_found', '기록을 찾을 수 없어요.');
         if (existing && existing.memberId !== me.id) throw fail_('forbidden', '본인 기록만 수정할 수 있어요.');
+        if (existing && existing.pass === 'Y') throw fail_('invalid', '기록권으로 채운 날은 수정할 수 없어요. 취소하고 다시 써주세요.');
         isNew = !existing;
         let photoId = existing ? existing.photoId : '';
         if (newPhoto || src.removePhoto) {
@@ -147,9 +148,41 @@ const ACTIONS = {
       const r = ownEntry_(t, me, req.id, true);
       photo = r.photoId;
       t.sh.deleteRow(r._row);
+      if (r.pass === 'Y') addPasses_(r.memberId, 1); // 기록권으로 채운 날을 지우면 기록권을 돌려줌
     });
     if (photo) trashPhoto_(photo);
     return stateFor_(me);
+  },
+
+  // --- 기록권: 관리자가 나눠 주고, 받은 사람이 운동 못 한 날 하루를 채움 ---
+  usePass: (me, req) => {
+    const date = String(req.date || '');
+    if (!isDate_(date)) throw fail_('invalid', '날짜를 골라주세요.');
+    if (date > addDaysStr_(today_(), 1)) throw fail_('invalid', '미래 날짜에는 쓸 수 없어요.');
+    const memo = String(req.memo || '').trim().slice(0, 100);
+    withLock_(() => {
+      const m = table_('members').rows.find((r) => r.id === me.id);
+      if (!(Number(m.passes) > 0)) throw fail_('no_pass', '남은 기록권이 없어요. 관리자에게 받을 수 있어요.');
+      const t = table_('entries');
+      if (t.rows.some((r) => r.memberId === me.id && r.date === date)) throw fail_('invalid', '이미 기록이 있는 날이에요. 기록이 없는 날에만 쓸 수 있어요.');
+      const now = String(Date.now());
+      const row = { id: 'e' + uid_(12), memberId: me.id, date, kind: '기록권', minutes: '0', km: '0', memo, photoId: '', hidden: '', createdAt: now, updatedAt: now, intensity: 'normal', speed: '', steps: '', pass: 'Y' };
+      writeRow_(t.sh, null, SHEETS.entries.map((c) => row[c]));
+      addPasses_(me.id, -1);
+    });
+    return stateFor_(me);
+  },
+
+  setPasses: (me, req) => {
+    requireAdmin_(me);
+    const n = Math.round(Number(req.count));
+    if (!(n >= 0 && n <= 99)) throw fail_('invalid', '기록권은 0~99장까지 줄 수 있어요.');
+    withLock_(() => {
+      const m = table_('members').rows.find((r) => r.id === req.id);
+      if (!m) throw fail_('not_found', '참가자를 찾을 수 없어요.');
+      setMemberField_(m, 'passes', String(n));
+    });
+    return Object.assign(stateFor_(me), { roster: roster_() });
   },
 
   // 이름과 프로필 사진을 함께 바꿈. 사진을 안 바꿀 때는 rename을 써도 됨
@@ -394,7 +427,7 @@ const ACTIONS = {
 // ---------------------------------------------------------------------------
 function stateFor_(me) {
   const memberRows = table_('members').rows;
-  const members = memberRows.map((m) => ({ id: m.id, name: m.name, joinedAt: Number(m.joinedAt) || 0, avatar: m.avatar || '', admin: m.role === 'admin', motto: m.motto || '' }));
+  const members = memberRows.map((m) => ({ id: m.id, name: m.name, joinedAt: Number(m.joinedAt) || 0, avatar: m.avatar || '', admin: m.role === 'admin', motto: m.motto || '', passes: Number(m.passes) || 0 }));
   const ids = {};
   members.forEach((m) => (ids[m.id] = true));
   const inbodyRows = table_('inbody').rows.filter((r) => ids[r.memberId] && isDate_(r.date));
@@ -449,6 +482,7 @@ function stateFor_(me) {
         hidden,
         createdAt: Number(r.createdAt) || 0,
         intensity: INTENSITY[r.intensity] ? r.intensity : 'normal',
+        pass: r.pass === 'Y',
       };
       // 칼로리는 모두에게 보여줌 (몸무게 자체는 보내지 않음)
       e.kcal = kcalFor_(e, weightAt(r.memberId, r.date));
@@ -558,8 +592,20 @@ function weightLookup_(memberRows, inbodyRows) {
   };
 }
 
+function setMemberField_(m, field, value) {
+  const t = table_('members');
+  const row = SHEETS.members.map((c) => (c === field ? value : m[c]));
+  writeRow_(t.sh, m._row, row);
+  m[field] = value;
+}
+
+function addPasses_(memberId, delta) {
+  const m = table_('members').rows.find((r) => r.id === memberId);
+  if (m) setMemberField_(m, 'passes', String(Math.max(0, (Number(m.passes) || 0) + delta)));
+}
+
 function roster_() {
-  return table_('members').rows.map((m) => ({ id: m.id, name: m.name, role: m.role, key: m.key, avatar: m.avatar || '' }));
+  return table_('members').rows.map((m) => ({ id: m.id, name: m.name, role: m.role, key: m.key, avatar: m.avatar || '', passes: Number(m.passes) || 0 }));
 }
 
 // ---------------------------------------------------------------------------
@@ -956,8 +1002,8 @@ function backupStatus_() {
 function memberTabs_(m, list, inbodyRows, copies) {
   const link = (id) => (id ? 'https://drive.google.com/file/d/' + (copies[id] || id) + '/view' : '');
   const INT = { light: '가볍게', normal: '보통', hard: '힘들게' };
-  const entries = [['날짜', '종목', '운동 시간(분)', '거리(km)', '속도(km/h)', '걸음 수', '강도', '메모', '숨김', '사진']].concat(
-    list.map((e) => [e.date, e.kind, Number(e.minutes) || '', Number(e.km) || '', Number(e.speed) || '', Number(e.steps) || '', INT[e.intensity] || '보통', e.memo, e.hidden === 'Y' ? '숨김' : '', link(e.photoId)])
+  const entries = [['날짜', '종목', '운동 시간(분)', '거리(km)', '속도(km/h)', '걸음 수', '강도', '메모', '숨김', '사진', '기록권']].concat(
+    list.map((e) => [e.date, e.kind, Number(e.minutes) || '', Number(e.km) || '', Number(e.speed) || '', Number(e.steps) || '', e.pass === 'Y' ? '' : INT[e.intensity] || '보통', e.memo, e.hidden === 'Y' ? '숨김' : '', link(e.photoId), e.pass === 'Y' ? '기록권 사용' : ''])
   );
   const inbody = [['측정일', '체중(kg)', '골격근량(kg)', '체지방량(kg)', '체지방률(%)', 'BMI', '기초대사량(kcal)', '인바디 점수', '친구에게 공개한 항목', '결과지 사진']].concat(
     inbodyRows.map((r) => {
@@ -976,6 +1022,7 @@ function memberTabs_(m, list, inbodyRows, copies) {
     ['몸무게(kg)', m.weight ? Number(m.weight) : '', pub.indexOf('weight') >= 0 ? '공개' : '나만 보기'],
     ['출생 연도', m.birthYear ? Number(m.birthYear) : '', pub.indexOf('birthYear') >= 0 ? '공개' : '나만 보기'],
     ['성별', sex[m.sex] || '', pub.indexOf('sex') >= 0 ? '공개' : '나만 보기'],
+    ['남은 기록권', Number(m.passes) || 0, ''],
     ['참가일', m.joinedAt ? Utilities.formatDate(new Date(Number(m.joinedAt)), Session.getScriptTimeZone(), 'yyyy-MM-dd') : '', ''],
     ['프로필 사진', link(m.avatar), ''],
   ];

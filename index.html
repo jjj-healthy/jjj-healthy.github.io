@@ -155,6 +155,7 @@
       </div>
       <small class="veil-note">칼로리 추정에 써요. 러닝·걷기·자전거는 속도·거리·걸음 수를 적으면 그 속도에 맞춰 계산해요. 칼로리는 대략적인 추정치(±20~30%)예요.</small>
     </div>
+    <p class="passhint" id="passHint" hidden>운동을 못 한 날이에요? <button type="button" class="linkbtn" data-usepass>기록권 쓰기</button></p>
     <label class="check"><input type="checkbox" id="f-hidden"><span>친구들에게 사진·메모 숨기기<small>운동한 날과 종목은 멤버 현황에 그대로 반영돼요.</small></span></label>
     <p class="err" id="entryErr" hidden></p>
     <div class="sheet-foot">
@@ -211,6 +212,7 @@
 <div class="scrim" id="manageSheet" hidden>
   <div class="sheet">
     <h3>참가자 관리</h3>
+    <p class="veil-note">기록권(🎫)은 −/+로 나눠 줄 수 있어요. 받은 사람은 운동 못 한 날 하루를 채울 수 있어요.</p>
     <p class="veil-note">친구마다 링크가 달라요. 링크가 곧 그 사람의 출입증이니 본인에게만 보내주세요. 링크가 새어 나가면 ‘재발급’으로 예전 링크를 막을 수 있어요.</p>
     <div class="roster" id="roster"><div class="empty">불러오는 중…</div></div>
     <form class="addrow" id="addForm" novalidate>
@@ -301,6 +303,22 @@
   </form>
 </div>
 
+<!-- 기록권 쓰기 -->
+<div class="scrim" id="passSheet" hidden>
+  <form class="sheet" id="passForm" novalidate>
+    <h3>기록권 쓰기</h3>
+    <p class="veil-note" id="passInfo"></p>
+    <label class="field"><span>채울 날짜</span><input type="date" id="p-date"></label>
+    <label class="field"><span>사유 (선택)</span><input type="text" id="p-memo" maxlength="100" placeholder="예: 출장, 몸살"></label>
+    <p class="veil-note">기록권으로 채운 날은 이번 주 운동한 날로 인정돼요. 운동 시간·칼로리·업적에는 들어가지 않아요. 잘못 썼으면 기록 카드에서 취소하면 기록권을 돌려받아요.</p>
+    <p class="err" id="passErr" hidden></p>
+    <div class="sheet-foot">
+      <button type="button" class="btn" data-close>취소</button>
+      <button type="submit" class="btn primary" id="passSave">기록권 쓰기</button>
+    </div>
+  </form>
+</div>
+
 <!-- 알림함 -->
 <div class="scrim" id="notiSheet" hidden>
   <div class="sheet">
@@ -348,6 +366,7 @@
         <li>하루에 여러 번 기록해도 운동한 날은 <b>하루</b>로 세요.</li>
         <li>지난주를 못 채웠다면 멤버 카드에 <b>낼 벌금</b>이 나타나요. 맨 위 <b>모인 벌금</b>은 모두의 벌금 합계예요.</li>
         <li>추가 규칙은 제목 아래 번호 목록에 있어요.</li>
+        <li><b>기록권</b>: 관리자가 나눠 주는 무료 기록권이에요. 출장이나 몸살처럼 운동을 못 한 날 하루를 채울 수 있어요. 내 멤버 카드의 <b>기록권 n장 · 쓰기</b>나 기록하기 화면에서 써요. 기록권으로 채운 날은 이번 주 목표에 인정되지만 운동 시간·칼로리·업적에는 들어가지 않고, 카드와 달력에 점선으로 따로 표시돼요.</li>
       </ul>
     </details>
 
