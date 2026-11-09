@@ -197,7 +197,8 @@
       <label class="field"><span>주당 목표 운동일</span><input type="number" id="r-goal" min="1" max="7" inputmode="numeric"></label>
       <label class="field"><span>미달 시 벌금 (원) · 이번 주부터 적용</span><input type="number" id="r-fine" min="0" step="1000" inputmode="numeric"></label>
     </div>
-    <label class="field"><span>시작일 (이 날이 속한 주부터 계산)</span><input type="date" id="r-start"></label>
+    <label class="field"><span>벌금 시작일 (이 날이 속한 주 월요일부터 계산)</span><input type="date" id="r-start"></label>
+    <p class="startnote" id="startNote"></p>
     <div class="rulegroup"><b>추가 규칙</b><span>자유롭게 추가, 수정, 삭제할 수 있어요</span></div>
     <div class="ruleedit" id="ruleEdit"></div>
     <button type="button" class="btn" id="addRule">+ 규칙 추가</button>

@@ -109,6 +109,7 @@ img.avatar { object-fit: cover; }
 .chip.bad { background: var(--bad-soft); color: var(--bad); }
 .chip.wait { background: var(--accent-soft); color: var(--accent); }
 .chip.off { background: var(--line); color: var(--muted); }
+.startnote { margin: -8px 0 0; font-size: 13px; color: var(--accent); }
 .nofine { margin: -14px 0 0; font-size: 13px; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 8px 12px; }
 .owed { grid-column: 3 / -1; font-size: 12px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
 .owed b { color: var(--bad); font-family: var(--font-num); font-weight: 600; }

@@ -225,11 +225,11 @@
     document.title = c.title + " · JJJ Healthy Girl";
     $("#title").textContent = c.title;
     const pot = ms.reduce((t, m) => t + fineSum(fineWeeks(m)), 0);
-    const startD = parseYmd(c.start);
+    const startD = mondayOf(parseYmd(c.start)); // 실제로 벌금 계산이 시작되는 월요일
     $("#rules").innerHTML =
       `<span class="rule">주 ${c.goal}일 이상</span>` +
       `<span class="rule">미달 시 ${esc(won(c.fine))}</span>` +
-      `<span class="rule">벌금은 ${startD.getMonth() + 1}월 ${startD.getDate()}일 주부터</span>` +
+      `<span class="rule">벌금은 ${startD.getMonth() + 1}월 ${startD.getDate()}일(월) 주부터</span>` +
       `<span class="rule pot">모인 벌금 <span class="num">${esc(won(pot))}</span></span>` +
       (isAdmin ? `<button class="linkbtn" type="button" id="editRules">규칙 수정</button>` : "");
     $("#ruleList").innerHTML = c.rules.map((r) => `<li>${esc(r)}</li>`).join("");
@@ -705,10 +705,19 @@
     ev.target.closest(".rrow").remove();
     numberRules();
   });
+  // 고른 날짜가 속한 주를 바로 보여줌 (예: 11/8(일)을 고르면 11/2(월) 주부터 계산)
+  function showStartNote() {
+    const v = $("#r-start").value;
+    if (!validDate(v)) { $("#startNote").textContent = ""; return; }
+    const mon = mondayOf(parseYmd(v)), sun = addDays(mon, 6);
+    $("#startNote").textContent = `→ ${mon.getMonth() + 1}월 ${mon.getDate()}일(월)~${sun.getMonth() + 1}월 ${sun.getDate()}일(일) 주부터 벌금을 계산해요. 그 전 주들은 벌금이 없어요.`;
+  }
+  $("#r-start").addEventListener("input", showStartNote);
   function openRules() {
     const c = cfg();
     $("#r-title").value = c.title; $("#r-goal").value = c.goal; $("#r-fine").value = c.fine;
     $("#r-start").value = c.start; $("#rulesErr").hidden = true;
+    showStartNote();
     $("#ruleEdit").innerHTML = "";
     c.rules.forEach((r) => addRuleRow(r));
     numberRules();
