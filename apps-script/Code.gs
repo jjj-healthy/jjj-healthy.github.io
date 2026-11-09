@@ -727,6 +727,8 @@ function sheet_(name) {
 // ---------------------------------------------------------------------------
 const CACHE_TTL = 300;
 let REQ_CACHE = {};
+// 저장 중(withLock_)에는 표를 시트에서 새로 읽고(fresh), 실제로 바꾼 표(dirty)만 끝나고 캐시에서 지움
+let LOCK_STATE = null;
 
 function scriptCache_() {
   try { return CacheService.getScriptCache(); } catch (_) { return null; }
@@ -744,23 +746,33 @@ function onEdit() {
 }
 
 function table_(name) {
-  if (REQ_CACHE[name]) return REQ_CACHE[name];
+  const inLock = !!LOCK_STATE;
+  if (REQ_CACHE[name] && (!inLock || LOCK_STATE.fresh[name])) return REQ_CACHE[name];
   const c = scriptCache_();
   let rows = null;
-  if (c) {
+  if (c && !inLock) {
     try { const hit = c.get('t:' + name); if (hit) rows = JSON.parse(hit); } catch (_) {}
   }
   if (!rows) {
     rows = readRows_(sheet_(name), name);
-    if (c) {
-      const s = JSON.stringify(rows);
-      if (s.length < 95000) try { c.put('t:' + name, s, CACHE_TTL); } catch (_) {}
-    }
+    if (inLock) LOCK_STATE.fresh[name] = true;
+    else putCache_(name, rows);
   }
   let sh = null;
-  const t = { rows, get sh() { return sh || (sh = sheet_(name)); } };
+  const t = {
+    rows,
+    // 시트에 손대는 건 쓰기뿐이라, 시트를 꺼내면 그 표를 '바뀜'으로 표시
+    get sh() { if (LOCK_STATE) LOCK_STATE.dirty[name] = true; return sh || (sh = sheet_(name)); },
+  };
   REQ_CACHE[name] = t;
   return t;
+}
+
+function putCache_(name, rows) {
+  const c = scriptCache_();
+  if (!c) return;
+  const s = JSON.stringify(rows);
+  if (s.length < 95000) try { c.put('t:' + name, s, CACHE_TTL); } catch (_) {}
 }
 
 function readRows_(sh, name) {
@@ -780,6 +792,7 @@ function readRows_(sh, name) {
 
 // 모든 칸을 일반 텍스트로 써서 날짜·숫자 자동 변환을 막음
 function writeRow_(sh, row, values) {
+  if (LOCK_STATE) LOCK_STATE.dirty[sh.getName()] = true;
   // 열이 추가된 예전 시트는 제목 줄을 최신으로 맞춤
   const cols = SHEETS[sh.getName()];
   if (cols && sh.getRange(1, cols.length).getDisplayValue() !== cols[cols.length - 1]) {
@@ -857,11 +870,18 @@ function writeSettings_(s) {
 function withLock_(fn) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) throw fail_('busy', '다른 저장이 진행 중이에요. 잠시 뒤 다시 시도해주세요.');
+  LOCK_STATE = { fresh: {}, dirty: {} };
   try {
-    clearCache_();
     return fn();
   } finally {
-    clearCache_();
+    const st = LOCK_STATE;
+    LOCK_STATE = null;
+    const c = scriptCache_();
+    const dirty = Object.keys(st.dirty);
+    dirty.forEach((n) => delete REQ_CACHE[n]);
+    if (c && dirty.length) try { c.removeAll(dirty.map((n) => 't:' + n)); } catch (_) {}
+    // 새로 읽었고 바뀌지 않은 표는 최신본으로 캐시에 넣어 둠
+    Object.keys(st.fresh).forEach((n) => { if (!st.dirty[n] && REQ_CACHE[n]) putCache_(n, REQ_CACHE[n].rows); });
     lock.releaseLock();
   }
 }

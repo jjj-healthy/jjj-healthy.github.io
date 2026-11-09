@@ -67,7 +67,14 @@
     return (e && e.message) || "저장하지 못했어요. 잠시 뒤 다시 시도해주세요.";
   };
 
+  // 받은 내용이 지금 화면과 같으면 다시 그리지 않음 (1분마다 새로고침할 때 깜빡임·사진 재로딩 방지)
+  const STATE_KEYS = ["me", "members", "entries", "settings", "bodies", "inbody", "reactions", "push"];
+  let lastSig = "";
   function apply(data, fromCache) {
+    const full = data.me && data.entries;
+    const sig = full ? JSON.stringify(STATE_KEYS.map((k) => data[k])) : "";
+    if (full && sig === lastSig && S.loaded) return;
+    if (full) lastSig = sig;
     if (data.me) S.me = data.me;
     if (data.members) S.members = data.members;
     if (data.entries) S.entries = data.entries;
@@ -93,18 +100,28 @@
   function dropCache() { try { localStorage.removeItem(CACHE_STORE); } catch (_) {} }
   const setSync = (on) => { $("#syncNote").hidden = !on; };
 
+  let firstLoad = true;
   async function load() {
-    setSync(S.loaded);
+    // '최신 기록 확인 중…'은 처음 열 때, 0.7초 넘게 걸릴 때만 보여줌 (1분마다 하는 새로고침은 조용히)
+    const showSync = firstLoad && S.loaded;
+    firstLoad = false;
+    const syncTimer = showSync ? setTimeout(() => setSync(true), 700) : 0;
     try { apply(await api("state")); }
     catch (e) {
       if (e && e.error === "invalid_key") return;
       if (!S.loaded) $("#board").innerHTML = `<div class="empty"><strong>기록을 불러오지 못했어요</strong>${esc(errText(e))}</div>`;
       else toast("최신 기록을 불러오지 못했어요. 저장된 기록을 보여드리고 있어요");
-    } finally { setSync(false); }
+    } finally { clearTimeout(syncTimer); setSync(false); }
   }
 
   // ---------- config ----------
+  let cfgMemo = null, cfgFrom;
   function cfg() {
+    if (cfgMemo && cfgFrom === S.settings) return cfgMemo;
+    cfgFrom = S.settings;
+    return (cfgMemo = cfgBuild());
+  }
+  function cfgBuild() {
     const c = S.settings || {};
     const fine = Number(c.fine);
     return {
@@ -347,7 +364,7 @@
         }
         const veiled = e.hidden && !mine;
         const photo = !veiled && validFileId(e.photo)
-          ? `<button type="button" class="photo" data-act="zoom" data-id="${esc(e.photo)}"><img src="${esc(photoSrc(e.photo, 1200))}" data-alt="${esc(photoAlt(e.photo, 1200))}" alt="${esc(m.name)}의 운동 사진" loading="lazy" referrerpolicy="no-referrer"></button>` : "";
+          ? `<button type="button" class="photo" data-act="zoom" data-id="${esc(e.photo)}"><img src="${esc(photoSrc(e.photo, 800))}" data-alt="${esc(photoAlt(e.photo, 800))}" alt="${esc(m.name)}의 운동 사진" loading="lazy" decoding="async" referrerpolicy="no-referrer"></button>` : "";
         const memo = !veiled && e.memo ? `<p class="memo">${esc(e.memo)}</p>` : "";
         let actions = "";
         if (mine) {

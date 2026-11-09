@@ -13,8 +13,9 @@
   --bad: #C2342A;
   --bad-soft: #FADFDB;
   --scrim: rgba(12, 18, 26, .55);
-  --font-display: "Black Han Sans", "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-display: "Black Han Sans", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  /* 본문은 휴대폰에 이미 있는 한글 글꼴을 써서 글꼴 내려받기를 줄임 */
+  --font-body: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
   --font-num: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --bronze: #A8642E;
   --silver: #7D8A97;
