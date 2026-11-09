@@ -141,18 +141,24 @@
     const a = ymd(monday), b = ymd(addDays(monday, 6));
     return list.reduce((t, e) => t + (e.date >= a && e.date <= b ? Number(e.minutes) || 0 : 0), 0);
   }
-  function missedWeeks(m) {
+  // 벌금이 생긴 주 목록: 벌금 시작 주(또는 참가한 주)부터 지난주까지, 목표를 못 채운 주
+  // 벌금은 그 주 일요일이 지나면 확정되고, 일요일이 속한 달의 벌금으로 셈
+  function fineWeeks(m) {
     const c = cfg();
     const thisMon = mondayOf(new Date());
     let w = mondayOf(parseYmd(c.start));
     if (m.joinedAt) { const j = mondayOf(new Date(m.joinedAt)); if (j > w) w = j; }
-    let missed = 0, guard = 0;
+    const out = [];
+    let guard = 0;
     while (w < thisMon && guard++ < 520) {
-      if (daysIn(m.list, w).size < c.goal) missed++;
+      const days = daysIn(m.list, w).size;
+      if (days < c.goal) out.push({ mon: w, sun: addDays(w, 6), days });
       w = addDays(w, 7);
     }
-    return missed;
+    return out;
   }
+  const missedWeeks = (m) => fineWeeks(m).length;
+  const weekRangeText = (w) => `${w.mon.getMonth() + 1}.${w.mon.getDate()}–${w.sun.getMonth() + 1}.${w.sun.getDate()}`;
   const selMonday = () => addDays(mondayOf(new Date()), S.weekOffset * 7);
   const selMonth = () => { const t = new Date(); return new Date(t.getFullYear(), t.getMonth() + S.monthOffset, 1); };
   const hueOf = (id) => { let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
@@ -275,10 +281,8 @@
           return `<span class="dot${r.days.has(d) ? (pass ? " pass" : " on") : ""}${d === today ? " today" : ""}" title="${d}${pass ? " 기록권" : ""}">${w}</span>`;
         }).join("");
         const isMe = S.me && r.m.id === S.me.id;
-        // 벌금이 생긴 멤버에게만 표시
-        const owed = r.missed && c.fine > 0
-          ? `<div class="owed"><span>지금까지 미달 <span class="num">${r.missed}</span>주</span><span>낼 벌금 <b>${esc(won(r.missed * c.fine))}</b></span></div>`
-          : "";
+        // 누적 벌금은 월별 보기(전체)와 내 페이지(나)에서 따로 보여줌
+        const owed = "";
         return `<div class="mcard${isMe ? " mine" : ""}">
           <div class="mtop">${avatar(r.m)}${medalsHtml(r.m.id)}${anyRec ? `<span class="rank">${i + 1}위</span>` : ""}</div>
           <div class="name">${nameBtn(r.m)}${isMe ? `<span class="me">나</span>` : ""}${mottoHtml(r.m, "inline")}</div>
@@ -365,6 +369,36 @@
   }
 
   // 월별 보기: 달력(날짜마다 운동한 멤버 색 점) + 멤버별 합계
+  // 월별 보기: 전체 멤버 벌금 누계 + 이 달에 확정된 벌금
+  function fineBox(ms, m1, mEnd) {
+    const c = cfg();
+    const fs = mondayOf(parseYmd(c.start));
+    const rows = ms.map((m) => {
+      const weeks = fineWeeks(m);
+      const inMonth = weeks.filter((w) => w.sun >= m1 && w.sun <= mEnd);
+      return { m, total: weeks.length, month: inMonth.length };
+    }).sort((x, y) => y.total - x.total || y.month - x.month || String(x.m.name).localeCompare(String(y.m.name), "ko"));
+    const sumAll = rows.reduce((s, r) => s + r.total, 0) * c.fine;
+    const sumMonth = rows.reduce((s, r) => s + r.month, 0) * c.fine;
+    const monthName = `${m1.getMonth() + 1}월`;
+    return `<div class="finebox">
+      <div class="finehead">
+        <b>벌금</b>
+        <span>전체 누계 <b class="num">${esc(won(sumAll))}</b></span>
+        <span>${monthName} 확정 <b class="num">${esc(won(sumMonth))}</b></span>
+      </div>
+      <div class="finetable" role="table" aria-label="멤버별 벌금">
+        <div class="fr fh" role="row"><span role="columnheader">멤버</span><span role="columnheader">${monthName}</span><span role="columnheader">누계</span></div>
+        ${rows.map((r) => `<div class="fr" role="row">
+          <span role="cell" class="fname">${avatar(r.m)}${esc(r.m.name || "친구")}</span>
+          <span role="cell" class="amt">${r.month ? `<b class="num">${esc(won(r.month * c.fine))}</b><small>${r.month}주</small>` : "–"}</span>
+          <span role="cell" class="amt${r.total ? " owe" : ""}">${r.total ? `<b class="num">${esc(won(r.total * c.fine))}</b><small>${r.total}주</small>` : "없음"}</span>
+        </div>`).join("")}
+      </div>
+      <p class="veil-note">벌금은 매주 일요일이 지나면 확정되고, 그 일요일이 속한 달에 들어가요. ${fs.getMonth() + 1}월 ${fs.getDate()}일 주부터 계산해요.</p>
+    </div>`;
+  }
+
   function monthBoard(ms, m1, mEnd, today) {
     const a = ymd(m1), b = ymd(mEnd);
     const byDate = {};
@@ -409,7 +443,7 @@
         <div class="mstats">${stats}</div>
       </div>`;
     }).join("");
-    return `<div class="cal">${cal}</div><div class="mstrip">${list}</div>`;
+    return `<div class="cal">${cal}</div><div class="mstrip">${list}</div>${fineBox(ms, m1, mEnd)}`;
   }
 
   let toastTimer;
@@ -1248,6 +1282,34 @@
   document.addEventListener("pointermove", barHover);
   document.addEventListener("pointerdown", barHover);
 
+  // 내 페이지: 내 벌금만 (누계, 이번 주 진행 상황, 벌금이 생긴 주 목록)
+  function myFinesHtml() {
+    const c = cfg();
+    const me = members().find((m) => S.me && m.id === S.me.id);
+    if (!me) return "";
+    const weeks = fineWeeks(me);
+    const fs = mondayOf(parseYmd(c.start));
+    const thisMon = mondayOf(new Date());
+    const done = daysIn(me.list, thisMon).size;
+    const left = 7 - ((new Date().getDay() + 6) % 7);
+    const now = thisMon < fs
+      ? `이번 주는 벌금 계산 전이에요.`
+      : done >= c.goal ? `이번 주는 목표 달성! (${done}/${c.goal}일)`
+      : c.goal - done > left ? `이번 주는 목표를 채우기 어려워요 (${done}/${c.goal}일). 일요일이 지나면 ${won(c.fine)}이 더해져요.`
+      : `이번 주 진행 중: ${done}/${c.goal}일, 오늘 포함 ${left}일 남았어요.`;
+    return `<section>
+        <h3>내 벌금</h3>
+        <div class="tiles">
+          <div class="tile"><span>누적 벌금</span><b class="${weeks.length ? "owe" : ""}">${esc(won(weeks.length * c.fine))}</b></div>
+          <div class="tile"><span>목표 못 채운 주</span><b>${weeks.length}<small>주</small></b></div>
+        </div>
+        <p class="finenow">${esc(now)}</p>
+        ${weeks.length
+          ? `<div class="finelist">${[...weeks].reverse().map((w) => `<div class="fl"><span class="num">${esc(weekRangeText(w))}</span><span>${w.days}/${c.goal}일</span><b class="num">${esc(won(c.fine))}</b></div>`).join("")}</div>`
+          : `<p class="veil-note">아직 벌금이 없어요. ${fs.getMonth() + 1}월 ${fs.getDate()}일 주부터 계산해요.</p>`}
+      </section>`;
+  }
+
   function renderMePage() {
     if (!S.me) return;
     const c = cfg();
@@ -1313,6 +1375,7 @@
         <div class="tiles">${tiles.map(([l, v, u]) => `<div class="tile"><span>${l}</span><b>${esc(String(v))}${u ? `<small>${u}</small>` : ""}</b></div>`).join("")}</div>
         ${kcal ? `<p class="kcalnote">${KNOTE}</p>` : ""}
       </section>
+      ${myFinesHtml()}
       <section>
         <h3>업적</h3>
         ${achievementsHtml(S.me.id, true)}

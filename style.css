@@ -460,6 +460,27 @@ img.avatar { object-fit: cover; }
 .backupbox a.btn { text-decoration: none; color: var(--ink); display: inline-flex; align-items: center; }
 .backupbox .veil-note b { color: var(--ink); }
 
+/* 벌금 */
+.finebox { border-top: 1px solid var(--line); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.finehead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+.finehead > b { font-family: var(--font-display); font-weight: 400; font-size: 18px; color: var(--ink); margin-right: 4px; }
+.finehead span b { color: var(--ink); font-size: 15px; }
+.finetable { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.fr { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--line); font-size: 13px; }
+.fr:first-child { border-top: 0; }
+.fr.fh { background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 600; }
+.fr .fname { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fr .fname .avatar { width: 24px; height: 24px; font-size: 11px; }
+.fr .amt b { display: block; font-weight: 600; white-space: nowrap; }
+.fr .amt small { display: block; color: var(--muted); font-size: 11px; }
+.fr .owe b, .tile b.owe { color: var(--bad); }
+.finenow { margin: 8px 0 0; font-size: 14px; }
+.finelist { display: flex; flex-direction: column; margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.fl { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; padding: 8px 12px; border-top: 1px solid var(--line); font-size: 13px; align-items: center; }
+.fl:first-child { border-top: 0; }
+.fl span:nth-child(2) { color: var(--muted); }
+.fl b { color: var(--bad); }
+
 /* 기록권 */
 .passchip { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; font-size: 12px; font-weight: 600; color: var(--accent); border: 1.5px dashed var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 9px; font-family: inherit; }
 button.passchip { cursor: pointer; }
