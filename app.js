@@ -113,7 +113,18 @@
       fine: Number.isFinite(fine) && fine >= 0 ? fine : 10000,
       start: validDate(c.start) ? c.start : ymd(mondayOf(new Date())),
       rules: parseRules(c),
+      fineHistory: Array.isArray(c.fineHistory) ? c.fineHistory.filter((x) => x && validDate(x.from)).sort((a, b) => (a.from < b.from ? -1 : 1)) : [],
     };
+  }
+  // 그 주에 정해져 있던 벌금 (금액을 바꿔도 지난 주는 예전 금액 그대로)
+  function fineFor(monday) {
+    const c = cfg(), key = ymd(monday);
+    let amt = c.fine;
+    if (c.fineHistory.length) {
+      amt = c.fineHistory[0].fine;
+      c.fineHistory.forEach((x) => { if (x.from <= key) amt = Number(x.fine); });
+    }
+    return Math.max(0, Number(amt) || 0);
   }
   // 추가 규칙 목록. 예전 버전의 '벌금 사용처 / 메모'는 첫 규칙으로 보여줌
   function parseRules(c) {
@@ -152,12 +163,13 @@
     let guard = 0;
     while (w < thisMon && guard++ < 520) {
       const days = daysIn(m.list, w).size;
-      if (days < c.goal) out.push({ mon: w, sun: addDays(w, 6), days });
+      if (days < c.goal) { const fine = fineFor(w); if (fine > 0) out.push({ mon: w, sun: addDays(w, 6), days, fine }); }
       w = addDays(w, 7);
     }
     return out;
   }
   const missedWeeks = (m) => fineWeeks(m).length;
+  const fineSum = (weeks) => weeks.reduce((s, w) => s + w.fine, 0);
   const weekRangeText = (w) => `${w.mon.getMonth() + 1}.${w.mon.getDate()}–${w.sun.getMonth() + 1}.${w.sun.getDate()}`;
   const selMonday = () => addDays(mondayOf(new Date()), S.weekOffset * 7);
   const selMonth = () => { const t = new Date(); return new Date(t.getFullYear(), t.getMonth() + S.monthOffset, 1); };
@@ -212,7 +224,7 @@
     // header
     document.title = c.title + " · JJJ Healthy Girl";
     $("#title").textContent = c.title;
-    const pot = ms.reduce((t, m) => t + missedWeeks(m) * c.fine, 0);
+    const pot = ms.reduce((t, m) => t + fineSum(fineWeeks(m)), 0);
     const startD = parseYmd(c.start);
     $("#rules").innerHTML =
       `<span class="rule">주 ${c.goal}일 이상</span>` +
@@ -271,7 +283,7 @@
         let chip;
         if (done >= c.goal) chip = `<span class="chip good">달성</span>`;
         else if (beforeFines || (r.m.joinedAt && mon < mondayOf(new Date(r.m.joinedAt)))) chip = `<span class="chip off">벌금 없음</span>`;
-        else if (!isCurrent) chip = `<span class="chip bad">벌금 ${esc(won(c.fine))}</span>`;
+        else if (!isCurrent) chip = fineFor(mon) > 0 ? `<span class="chip bad">벌금 ${esc(won(fineFor(mon)))}</span>` : `<span class="chip off">벌금 없음</span>`;
         else if (c.goal - done > daysLeft) chip = `<span class="chip bad">미달 확정</span>`;
         else chip = `<span class="chip wait">${c.goal - done}일 더</span>`;
         const passDays = passOnlyDays(r.m.list);
@@ -376,10 +388,10 @@
     const rows = ms.map((m) => {
       const weeks = fineWeeks(m);
       const inMonth = weeks.filter((w) => w.sun >= m1 && w.sun <= mEnd);
-      return { m, total: weeks.length, month: inMonth.length };
-    }).sort((x, y) => y.total - x.total || y.month - x.month || String(x.m.name).localeCompare(String(y.m.name), "ko"));
-    const sumAll = rows.reduce((s, r) => s + r.total, 0) * c.fine;
-    const sumMonth = rows.reduce((s, r) => s + r.month, 0) * c.fine;
+      return { m, total: weeks.length, month: inMonth.length, totalAmt: fineSum(weeks), monthAmt: fineSum(inMonth) };
+    }).sort((x, y) => y.totalAmt - x.totalAmt || y.monthAmt - x.monthAmt || String(x.m.name).localeCompare(String(y.m.name), "ko"));
+    const sumAll = rows.reduce((s, r) => s + r.totalAmt, 0);
+    const sumMonth = rows.reduce((s, r) => s + r.monthAmt, 0);
     const monthName = `${m1.getMonth() + 1}월`;
     return `<div class="finebox">
       <div class="finehead">
@@ -391,11 +403,11 @@
         <div class="fr fh" role="row"><span role="columnheader">멤버</span><span role="columnheader">${monthName}</span><span role="columnheader">누계</span></div>
         ${rows.map((r) => `<div class="fr" role="row">
           <span role="cell" class="fname">${avatar(r.m)}${esc(r.m.name || "친구")}</span>
-          <span role="cell" class="amt">${r.month ? `<b class="num">${esc(won(r.month * c.fine))}</b><small>${r.month}주</small>` : "–"}</span>
-          <span role="cell" class="amt${r.total ? " owe" : ""}">${r.total ? `<b class="num">${esc(won(r.total * c.fine))}</b><small>${r.total}주</small>` : "없음"}</span>
+          <span role="cell" class="amt">${r.month ? `<b class="num">${esc(won(r.monthAmt))}</b><small>${r.month}주</small>` : "–"}</span>
+          <span role="cell" class="amt${r.total ? " owe" : ""}">${r.total ? `<b class="num">${esc(won(r.totalAmt))}</b><small>${r.total}주</small>` : "없음"}</span>
         </div>`).join("")}
       </div>
-      <p class="veil-note">벌금은 매주 일요일이 지나면 확정되고, 그 일요일이 속한 달에 들어가요. ${fs.getMonth() + 1}월 ${fs.getDate()}일 주부터 계산해요.</p>
+      <p class="veil-note">벌금은 매주 일요일이 지나면 확정되고, 그 일요일이 속한 달에 들어가요. 금액은 그 주에 정해져 있던 금액으로 고정돼요. ${fs.getMonth() + 1}월 ${fs.getDate()}일 주부터 계산해요.</p>
     </div>`;
   }
 
@@ -1295,17 +1307,17 @@
     const now = thisMon < fs
       ? `이번 주는 벌금 계산 전이에요.`
       : done >= c.goal ? `이번 주는 목표 달성! (${done}/${c.goal}일)`
-      : c.goal - done > left ? `이번 주는 목표를 채우기 어려워요 (${done}/${c.goal}일). 일요일이 지나면 ${won(c.fine)}이 더해져요.`
+      : c.goal - done > left ? `이번 주는 목표를 채우기 어려워요 (${done}/${c.goal}일). 일요일이 지나면 ${won(fineFor(thisMon))}이 더해져요.`
       : `이번 주 진행 중: ${done}/${c.goal}일, 오늘 포함 ${left}일 남았어요.`;
     return `<section>
         <h3>내 벌금</h3>
         <div class="tiles">
-          <div class="tile"><span>누적 벌금</span><b class="${weeks.length ? "owe" : ""}">${esc(won(weeks.length * c.fine))}</b></div>
+          <div class="tile"><span>누적 벌금</span><b class="${weeks.length ? "owe" : ""}">${esc(won(fineSum(weeks)))}</b></div>
           <div class="tile"><span>목표 못 채운 주</span><b>${weeks.length}<small>주</small></b></div>
         </div>
         <p class="finenow">${esc(now)}</p>
         ${weeks.length
-          ? `<div class="finelist">${[...weeks].reverse().map((w) => `<div class="fl"><span class="num">${esc(weekRangeText(w))}</span><span>${w.days}/${c.goal}일</span><b class="num">${esc(won(c.fine))}</b></div>`).join("")}</div>`
+          ? `<div class="finelist">${[...weeks].reverse().map((w) => `<div class="fl"><span class="num">${esc(weekRangeText(w))}</span><span>${w.days}/${c.goal}일</span><b class="num">${esc(won(w.fine))}</b></div>`).join("")}</div>`
           : `<p class="veil-note">아직 벌금이 없어요. ${fs.getMonth() + 1}월 ${fs.getDate()}일 주부터 계산해요.</p>`}
       </section>`;
   }

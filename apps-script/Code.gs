@@ -30,7 +30,7 @@ const INBODY_FIELDS = {
   bmr: { label: '기초대사량', min: 500, max: 4000 },
   score: { label: '인바디 점수', min: 0, max: 120 },
 };
-const DEFAULT_SETTINGS = { title: '주 3회 운동 내기', goal: '3', fine: '10000', start: '', note: '', rules: '[]' };
+const DEFAULT_SETTINGS = { title: '주 3회 운동 내기', goal: '3', fine: '10000', start: '', note: '', rules: '[]', fineHistory: '[]' };
 const MAX_RULES = 20;
 const REACTION_EMOJIS = ['👍', '🔥', '💪', '👏', '😂', '❤️'];
 const PHOTO_FOLDER_NAME = 'healthy-photos';
@@ -234,6 +234,7 @@ const ACTIONS = {
       title: String(s.title || '').trim().slice(0, 40) || DEFAULT_SETTINGS.title,
       goal: String(goal),
       fine: String(fine),
+      fineHistory: JSON.stringify(nextFineHistory_(readSettings_(), fine)),
       start: s.start,
       note: String(s.note || '').trim().slice(0, 60),
       rules: JSON.stringify((Array.isArray(s.rules) ? s.rules : [])
@@ -809,7 +810,27 @@ function settingsOut_() {
   let rules = [];
   try { rules = JSON.parse(s.rules || '[]'); } catch (_) {}
   s.rules = Array.isArray(rules) ? rules.map(String) : [];
+  s.fineHistory = fineHistory_(s);
   return s;
+}
+
+// 벌금 금액 기록: [{from: 'YYYY-MM-DD'(그 주 월요일), fine}] — 각 주의 벌금은 그 주에 정해져 있던 금액으로 고정
+function fineHistory_(s) {
+  let h = [];
+  try { h = JSON.parse(s.fineHistory || '[]'); } catch (_) {}
+  return Array.isArray(h) ? h.filter((x) => x && isDate_(x.from) && Number(x.fine) >= 0).map((x) => ({ from: x.from, fine: Number(x.fine) })) : [];
+}
+
+// 금액이 바뀌면 이번 주(아직 확정 안 된 주)부터 새 금액. 지난 주들은 예전 금액 그대로
+function nextFineHistory_(old, fine) {
+  const h = fineHistory_(old);
+  const prev = Number(old.fine);
+  if (Number.isFinite(prev) && prev === fine) return h;
+  if (!h.length && Number.isFinite(prev)) h.push({ from: '2000-01-03', fine: prev });
+  const thisMon = mondayOf_(today_());
+  const kept = h.filter((x) => x.from < thisMon);
+  kept.push({ from: thisMon, fine });
+  return kept;
 }
 
 function readSettings_() {
