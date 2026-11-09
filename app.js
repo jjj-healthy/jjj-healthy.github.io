@@ -211,7 +211,7 @@
     $("#rules").innerHTML =
       `<span class="rule">주 ${c.goal}일 이상</span>` +
       `<span class="rule">미달 시 ${esc(won(c.fine))}</span>` +
-      `<span class="rule">${startD.getMonth() + 1}월 ${startD.getDate()}일 주부터</span>` +
+      `<span class="rule">벌금은 ${startD.getMonth() + 1}월 ${startD.getDate()}일 주부터</span>` +
       `<span class="rule pot">모인 벌금 <span class="num">${esc(won(pot))}</span></span>` +
       (isAdmin ? `<button class="linkbtn" type="button" id="editRules">규칙 수정</button>` : "");
     $("#ruleList").innerHTML = c.rules.map((r) => `<li>${esc(r)}</li>`).join("");
@@ -239,6 +239,11 @@
       $("#weekRange").textContent = `${m1.getFullYear()}년 ${m1.getMonth() + 1}월`;
     }
     $("#next").disabled = isCurrent;
+    // 벌금 계산 시작 주보다 이전 주(예: 베타 테스트 기간)는 기록만 보여주고 벌금은 없음
+    const fineStart = mondayOf(parseYmd(c.start));
+    const beforeFines = isWeek && mon < fineStart;
+    $("#noFineNote").hidden = !beforeFines;
+    if (beforeFines) $("#noFineNote").textContent = `벌금 계산 시작(${fineStart.getMonth() + 1}월 ${fineStart.getDate()}일 주) 전이라 이 주는 벌금이 없어요. 운동 기록은 그대로 남아 있어요.`;
     $("#boardSub").textContent = isWeek ? "요일별 운동한 날" : "날짜별 운동한 멤버";
     const rangeA = isWeek ? ymd(mon) : ymd(m1);
     const rangeB = isWeek ? ymd(sun) : ymd(mEnd);
@@ -259,6 +264,7 @@
         const done = r.days.size;
         let chip;
         if (done >= c.goal) chip = `<span class="chip good">달성</span>`;
+        else if (beforeFines || (r.m.joinedAt && mon < mondayOf(new Date(r.m.joinedAt)))) chip = `<span class="chip off">벌금 없음</span>`;
         else if (!isCurrent) chip = `<span class="chip bad">벌금 ${esc(won(c.fine))}</span>`;
         else if (c.goal - done > daysLeft) chip = `<span class="chip bad">미달 확정</span>`;
         else chip = `<span class="chip wait">${c.goal - done}일 더</span>`;
